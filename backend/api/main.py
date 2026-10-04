@@ -30,6 +30,7 @@ from api.core.config import settings
 from api.core.exceptions import register_exception_handlers
 from api.core.limiter import limiter
 from api.emotion.router import router as emotion_router
+from api.pose.router import router as pose_router
 from api.speech.router import router as speech_router
 from api.translation.router import router as translation_router
 from api.websocket.router import router as websocket_router
@@ -65,6 +66,7 @@ register_exception_handlers(app)
 app.include_router(ai_router)
 app.include_router(analytics_router)
 app.include_router(emotion_router)
+app.include_router(pose_router)
 app.include_router(speech_router)
 app.include_router(translation_router)
 app.include_router(websocket_router)
