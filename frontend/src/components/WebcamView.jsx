@@ -30,6 +30,24 @@ const SPEECH_RECONNECT_DELAY_MS = 2000;
 // clip at full 1920x1080 just inflates the request payload and per-frame
 // inference time for no accuracy gain.
 const DEMO_CAPTURE_WIDTH = 480;
+// How long a "Record sign" capture runs — matches roughly the average
+// INCLUDE clip duration, long enough to complete one sign.
+const RECORD_DURATION_MS = 3000;
+
+// "Record sign": captures RECORD_DURATION_MS of the user's OWN live webcam,
+// then submits it to the same /pose/classify-clip whole-clip pipeline the
+// demo clips use, instead of streaming through /ws/gesture. This exists
+// because testing showed the model itself is genuinely capable across the
+// full vocabulary (94.5% correct on a 200-example held-out sample via
+// whole-clip classification) — the live-streaming failure mode is
+// specifically the continuously-sliding window seeing incomplete gesture
+// motion, not the model not knowing enough signs. Recording a short clip
+// and classifying it whole sidesteps that, using the user's real camera
+// instead of a pre-recorded file — so any of the 262 trained signs can be
+// attempted, not just the 6 demo clips. Not guaranteed correct the way the
+// verified demo clips are (still subject to the same live/studio domain
+// gap and live signing-style variance), but a real shot at the full
+// vocabulary instead of none.
 
 // Fallback demo path: replays a known-good INCLUDE clip (real recorded sign,
 // already verified to classify correctly) instead of the live webcam, so a
@@ -133,10 +151,18 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
   const [selectedClipId, setSelectedClipId] = useState(DEMO_CLIPS[0].id);
   const selectedClip = DEMO_CLIPS.find((c) => c.id === selectedClipId) ?? DEMO_CLIPS[0];
 
+  // "Record sign" — same idle -> recording -> processing -> recognized/
+  // no-result shape as the demo-clip flow, but sourced from the user's own
+  // live camera for RECORD_DURATION_MS instead of a pre-recorded file.
+  const [recordStatus, setRecordStatus] = useState("idle");
+  const [recordSecondsLeft, setRecordSecondsLeft] = useState(0);
+  const recordFramesRef = useRef([]);
+
   const startDemo = useCallback((clipId) => {
     if (clipId) setSelectedClipId(clipId);
     setDemoMode(true);
     setDemoStatus("playing");
+    setRecordStatus("idle"); // leaving live view — the record indicator is no longer relevant
     demoFramesRef.current = [];
     setReplayTick((t) => t + 1); // forces the <video> to remount and play from frame 0
   }, []);
@@ -178,6 +204,87 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
     }, 1000 / CAPTURE_FPS);
     return () => clearInterval(interval);
   }, [sendFrame, demoMode]);
+
+  const handleRecordFinished = useCallback(async () => {
+    setRecordStatus("processing");
+    const frames = recordFramesRef.current;
+    if (frames.length < 2) {
+      setRecordStatus("no-result");
+      return;
+    }
+    try {
+      const { data } = await apiClient.post("/pose/classify-clip", { frames });
+      // Same staleness guard as the demo-clip flow: don't apply a result
+      // for a recording the user has since moved on from (e.g. switched to
+      // demo mode while this POST was in flight).
+      if (demoModeRef.current) return;
+      onDemoResult?.(data);
+      setRecordStatus("recognized");
+    } catch {
+      if (!demoModeRef.current) setRecordStatus("no-result");
+    }
+  }, [onDemoResult]);
+
+  const startRecording = useCallback(() => {
+    recordFramesRef.current = [];
+    setRecordStatus("recording");
+    setRecordSecondsLeft(Math.ceil(RECORD_DURATION_MS / 1000));
+  }, []);
+
+  // Countdown display only — cosmetic, decoupled from the actual capture
+  // timing below so a dropped tick here can't desync what's collected.
+  useEffect(() => {
+    if (recordStatus !== "recording") return undefined;
+    const interval = setInterval(() => {
+      setRecordSecondsLeft((s) => Math.max(0, s - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [recordStatus]);
+
+  // Live-recording capture: same requestVideoFrameCallback approach as the
+  // demo clips (see the comment on RECORD_DURATION_MS above for why this
+  // whole-clip method is used instead of streaming), but reading from
+  // react-webcam's underlying <video> element and bounded by a fixed
+  // duration timer instead of the clip's own `onEnded` event.
+  useEffect(() => {
+    if (recordStatus !== "recording") return undefined;
+    const video = webcamRef.current?.video;
+    const canvas = demoCanvasRef.current;
+    if (!video || !canvas || typeof video.requestVideoFrameCallback !== "function") {
+      setRecordStatus("no-result");
+      return undefined;
+    }
+
+    let cancelled = false;
+    let handle;
+    let frameIndex = 0;
+    const onFrame = () => {
+      if (cancelled) return;
+      frameIndex += 1;
+      if (frameIndex % 2 === 0) {
+        const scale = DEMO_CAPTURE_WIDTH / video.videoWidth;
+        canvas.width = DEMO_CAPTURE_WIDTH;
+        canvas.height = Math.round(video.videoHeight * scale);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        recordFramesRef.current.push(canvas.toDataURL("image/jpeg", 0.8));
+      }
+      handle = video.requestVideoFrameCallback(onFrame);
+    };
+    handle = video.requestVideoFrameCallback(onFrame);
+
+    const timer = setTimeout(() => {
+      cancelled = true;
+      if (handle) video.cancelVideoFrameCallback(handle);
+      handleRecordFinished();
+    }, RECORD_DURATION_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (handle) video.cancelVideoFrameCallback(handle);
+    };
+  }, [recordStatus, handleRecordFinished]);
 
   // Demo-clip capture: collect every rendered frame into demoFramesRef,
   // driven by requestVideoFrameCallback rather than a setInterval timer —
@@ -269,6 +376,12 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
                 : demoStatus === "no-result"
                 ? "bg-amber-400"
                 : "bg-neon animate-pulse"
+              : recordStatus === "recording" || recordStatus === "processing"
+              ? "bg-red-500 animate-pulse"
+              : recordStatus === "recognized"
+              ? "bg-neon"
+              : recordStatus === "no-result"
+              ? "bg-amber-400"
               : connected
               ? "bg-neon"
               : "bg-red-500"
@@ -283,6 +396,14 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
               : demoStatus === "recognized"
               ? "Recognized"
               : "No result — try replay"
+            : recordStatus === "recording"
+            ? `Recording... ${recordSecondsLeft}s`
+            : recordStatus === "processing"
+            ? "Processing..."
+            : recordStatus === "recognized"
+            ? "Recognized"
+            : recordStatus === "no-result"
+            ? "No result — try again"
             : connected
             ? "Live"
             : "Reconnecting..."}
@@ -313,7 +434,8 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
           <button
             type="button"
             onClick={() => (demoMode ? stopDemo() : startDemo())}
-            className="px-3 py-1.5 rounded-lg text-xs glass-panel border-neon/40 text-neutral-200 hover:text-neon transition-colors"
+            disabled={!demoMode && (recordStatus === "recording" || recordStatus === "processing")}
+            className="px-3 py-1.5 rounded-lg text-xs glass-panel border-neon/40 text-neutral-200 hover:text-neon transition-colors disabled:opacity-40"
           >
             {demoMode ? "Switch to live camera" : "Play demo clip"}
           </button>
@@ -324,6 +446,20 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
               className="px-3 py-1.5 rounded-lg text-xs glass-panel border-neon/40 text-neutral-200 hover:text-neon transition-colors"
             >
               Replay clip
+            </button>
+          )}
+          {!demoMode && (
+            <button
+              type="button"
+              onClick={startRecording}
+              disabled={recordStatus === "recording" || recordStatus === "processing"}
+              className="px-3 py-1.5 rounded-lg text-xs glass-panel border-red-400/40 text-neutral-200 hover:text-red-400 transition-colors disabled:opacity-40"
+            >
+              {recordStatus === "recording"
+                ? `Recording ${recordSecondsLeft}s`
+                : recordStatus === "processing"
+                ? "Processing..."
+                : "Record sign (any word)"}
             </button>
           )}
         </div>
