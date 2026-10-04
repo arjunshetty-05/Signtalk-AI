@@ -112,6 +112,7 @@ async def ws_gesture(websocket: WebSocket, token: str | None = Query(default=Non
                         conversation_memory.get(),
                         offline_mode,  # offline_mode=True -> skip Gemini, go straight to Flan-T5-Small
                     )
+                    signed_tokens = list(accumulated_tokens)
                     conversation_memory.add(result["sentence"])
                     accumulated_tokens.clear()
                     await websocket.send_text(json.dumps({
@@ -120,6 +121,32 @@ async def ws_gesture(websocket: WebSocket, token: str | None = Query(default=Non
                         "source": result["source"],
                         "low_confidence": result["low_confidence"],
                     }))
+
+                    # Mirrors /ai/predict's Firestore + Socket.IO side effects
+                    # (see api/ai/router.py) — without this, conversation
+                    # history and the emotion-distribution chart never
+                    # populate from actual live webcam use, since nothing in
+                    # the frontend calls /ai/predict directly.
+                    try:
+                        from api.firebase.firebase_client import log_emotion, save_conversation
+
+                        entry = {
+                            "user_id": user.uid,
+                            "session_id": user.uid,
+                            "gesture_tokens": signed_tokens,
+                            "corrected_sentence": result["sentence"],
+                            "language": "en",
+                            "emotion": dominant_emotion,
+                            "created_at": emission["timestamp"],
+                        }
+                        save_conversation(entry)
+                        log_emotion(user.uid, dominant_emotion, 1.0)
+
+                        from api.socket_manager import broadcast_new_conversation
+
+                        await broadcast_new_conversation(user.uid, entry)
+                    except Exception:
+                        logger.warning("Firestore/Socket.IO side-effects skipped for /ws/gesture", exc_info=False)
 
     except WebSocketDisconnect:
         logger.info("User %s disconnected from /ws/gesture", user.uid)
