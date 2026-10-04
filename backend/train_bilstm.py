@@ -198,10 +198,16 @@ def main():
     saved_model_dir = os.path.join(args.output_dir, "saved_model")
     model.export(saved_model_dir)
 
-    # Export float16-quantized TFLite
+    # Export float16-quantized TFLite. The Bidirectional LSTM's backward
+    # pass needs Select TF ops (Flex) support to convert at all — plain
+    # TFLITE_BUILTINS fails with "tf.TensorListReserve op requires
+    # element_shape to be static". The exported model requires the Flex
+    # delegate at inference time as a result (see tensorflow.org/lite/guide/ops_select).
     converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     converter.target_spec.supported_types = [tf.float16]
+    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS, tf.lite.OpsSet.SELECT_TF_OPS]
+    converter._experimental_lower_tensor_list_ops = False
     tflite_model = converter.convert()
     tflite_path = os.path.join(args.output_dir, "bilstm.tflite")
     with open(tflite_path, "wb") as f:
