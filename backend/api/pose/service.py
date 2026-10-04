@@ -27,6 +27,13 @@ SEQUENCE_LENGTH = 30
 SMOOTHING_WINDOW = 4
 STABILIZATION_AGREEMENT_COUNT = 3
 COOLDOWN_SECONDS = 1.5
+# Below this, a prediction is suppressed entirely (treated as "nothing
+# recognized yet") rather than displayed — at 39 classes, chance level is
+# ~2.6%, so 40-60% isn't nothing, but live testing showed this band is
+# where wrong guesses live most often. Doesn't improve the model's
+# underlying accuracy, just stops low-confidence guesses from being shown
+# as if they were confident answers. Tune if it feels too strict/lenient.
+MIN_EMIT_CONFIDENCE = 0.65
 
 
 class GestureConnectionState:
@@ -69,6 +76,9 @@ class GestureConnectionState:
     def _stabilize(self, result: dict) -> dict | None:
         label, confidence = result["label"], result["confidence"]
         now = time.time()
+
+        if confidence < MIN_EMIT_CONFIDENCE:
+            return None
 
         self._recent_predictions.append(label)
         agrees = (
