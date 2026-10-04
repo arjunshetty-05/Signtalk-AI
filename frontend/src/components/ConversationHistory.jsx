@@ -27,15 +27,26 @@ export default function ConversationHistory({ lastConversationEventAt }) {
   // Re-fetches on mount, and again whenever the Socket.IO "conversation:new"
   // event fires (see useConversationSocket) — so a newly saved conversation
   // shows up live instead of only after a manual page reload.
+  //
+  // Depends on user?.uid, NOT the `user` object itself: onIdTokenChanged
+  // (see AuthProvider.jsx) fires on every token refresh, handing back a new
+  // User object reference for the *same* logged-in user. Depending on the
+  // object identity turned this into a self-sustaining loop: fetch -> axios
+  // interceptor calls getIdToken() -> triggers a refresh when the cached
+  // token is stale -> onIdTokenChanged fires -> new `user` reference ->
+  // effect re-fires -> fetch again. Confirmed live: this was hammering
+  // GET /conversations at ~1.6 req/s (our own 100/min rate limit ceiling)
+  // and burning through the Firestore read quota.
+  const uid = user?.uid;
   useEffect(() => {
-    if (!user) return;
+    if (!uid) return;
     let cancelled = false;
 
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const { data } = await apiClient.get(`/conversations/${user.uid}`);
+        const { data } = await apiClient.get(`/conversations/${uid}`);
         if (!cancelled) setEntries(data);
       } catch (err) {
         if (!cancelled) setError("Could not load conversation history.");
@@ -47,7 +58,7 @@ export default function ConversationHistory({ lastConversationEventAt }) {
     return () => {
       cancelled = true;
     };
-  }, [user, lastConversationEventAt]);
+  }, [uid, lastConversationEventAt]);
 
   return (
     <div className="glass-panel rounded-2xl p-4 h-full overflow-y-auto">

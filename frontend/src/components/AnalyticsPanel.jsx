@@ -33,12 +33,17 @@ export default function AnalyticsPanel({ latestLabel, lastConversationEventAt })
   // Emotion distribution from conversation history — refetches on mount and
   // whenever the Socket.IO "conversation:new" event fires, not just when a
   // gesture label happens to update.
+  //
+  // Depends on user?.uid, not the `user` object — see the matching comment
+  // in ConversationHistory.jsx for why depending on the object reference
+  // turned this into a self-sustaining refetch loop against Firestore.
+  const uid = user?.uid;
   useEffect(() => {
-    if (!user) return;
+    if (!uid) return;
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await apiClient.get(`/conversations/${user.uid}`);
+        const { data } = await apiClient.get(`/conversations/${uid}`);
         if (cancelled) return;
         const counts = {};
         for (const entry of data) {
@@ -52,7 +57,7 @@ export default function AnalyticsPanel({ latestLabel, lastConversationEventAt })
     return () => {
       cancelled = true;
     };
-  }, [user, lastConversationEventAt]);
+  }, [uid, lastConversationEventAt]);
 
   const emotionData = useMemo(
     () => Object.entries(emotionCounts).map(([emotion, count]) => ({ emotion, count })),
