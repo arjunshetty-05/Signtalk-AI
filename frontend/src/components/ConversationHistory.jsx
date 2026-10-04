@@ -23,6 +23,8 @@ export default function ConversationHistory({ lastConversationEventAt }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [clearing, setClearing] = useState(false);
+  const [clearMessage, setClearMessage] = useState(null);
 
   // Re-fetches on mount, and again whenever the Socket.IO "conversation:new"
   // event fires (see useConversationSocket) — so a newly saved conversation
@@ -60,12 +62,38 @@ export default function ConversationHistory({ lastConversationEventAt }) {
     };
   }, [uid, lastConversationEventAt]);
 
+  const clearHistory = async () => {
+    if (!uid || clearing || !window.confirm("Delete all conversation history? This cannot be undone.")) return;
+    setClearing(true);
+    setClearMessage(null);
+    try {
+      const { data } = await apiClient.delete(`/conversations/${uid}`);
+      setEntries([]);
+      setClearMessage(`${data.deleted} entr${data.deleted === 1 ? "y" : "ies"} deleted.`);
+    } catch {
+      setClearMessage("Could not clear conversation history.");
+    } finally {
+      setClearing(false);
+    }
+  };
+
   return (
     <div className="glass-panel rounded-2xl p-4 h-full overflow-y-auto">
-      <h2 className="text-sm font-semibold text-neutral-300 mb-3">Conversation History</h2>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h2 className="text-sm font-semibold text-neutral-300">Conversation History</h2>
+        <button
+          type="button"
+          onClick={clearHistory}
+          disabled={clearing || entries.length === 0}
+          className="text-[11px] text-red-400 hover:text-red-300 disabled:text-neutral-600 disabled:cursor-not-allowed"
+        >
+          {clearing ? "Clearing..." : "Clear history"}
+        </button>
+      </div>
 
       {loading && <p className="text-xs text-neutral-500">Loading...</p>}
       {error && <p className="text-xs text-red-400">{error}</p>}
+      {clearMessage && <p className="text-xs text-neutral-400 mb-2">{clearMessage}</p>}
       {!loading && !error && entries.length === 0 && (
         <p className="text-xs text-neutral-500">No conversations yet.</p>
       )}

@@ -47,6 +47,10 @@ import nlp_correction
 logger = logging.getLogger("signtalk.pose")
 router = APIRouter(prefix="/pose", tags=["pose"])
 _executor = ThreadPoolExecutor(max_workers=2)
+MIN_CLIP_CONFIDENCE = 0.25
+MIN_WRIST_VISIBILITY = 0.15
+MIN_VISIBLE_WRIST_FRAMES = 0.25
+MIN_CLIP_MOTION = 0.003
 
 
 class ClassifyClipRequest(BaseModel):
@@ -67,14 +71,26 @@ def _classify_clip_sync(frames_b64: list[str]) -> dict:
     movenet_sig = load_movenet()
     smoother = TemporalSmoother(window=SMOOTHING_WINDOW)
     smoothed = []
+    wrist_visibility = []
     for b64 in frames_b64:
         frame_bgr = decode_base64_jpeg(b64)
         raw_kp = extract_keypoints(frame_bgr, movenet_sig)
+        wrist_visibility.append(
+            float(np.mean([raw_kp[9, 2], raw_kp[10, 2]]))
+        )
         normalized = normalize_keypoints(raw_kp)
         smoothed.append(smoother.smooth(normalized))
 
     indices = np.linspace(0, len(smoothed) - 1, SEQUENCE_LENGTH).round().astype(int)
     sequence = np.stack([smoothed[i] for i in indices], axis=0).astype(np.float32)
+    visible_fraction = np.mean(np.array(wrist_visibility) >= MIN_WRIST_VISIBILITY)
+    motion = float(np.mean(np.linalg.norm(np.diff(sequence, axis=0), axis=-1)))
+    if visible_fraction < MIN_VISIBLE_WRIST_FRAMES or motion < MIN_CLIP_MOTION:
+        return {
+            "label": "No sign detected",
+            "confidence": 0.0,
+            "rejected": True,
+        }
     return classify_sequence(sequence)
 
 
@@ -95,6 +111,15 @@ async def classify_clip(
         "diag classify-clip: label=%s confidence=%.3f n_frames=%d",
         result["label"], result["confidence"], len(body.frames),
     )
+
+    if result.get("rejected") or result["confidence"] < MIN_CLIP_CONFIDENCE:
+        return ClassifyClipResponse(
+            label=result["label"],
+            confidence=result["confidence"],
+            sentence="",
+            source="classifier",
+            low_confidence=True,
+        )
 
     nlp_result = await loop.run_in_executor(
         _executor,

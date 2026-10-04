@@ -1,286 +1,166 @@
-# SignTalk AI
+# SignTalk AI — Complete Developer & Onboarding Guide
 
-Real-time sign language recognition with emotion fusion, NLP sentence
-correction, multilingual speech/translation, and an offline "airplane-mode"
-fallback path. Originally scoped across four workstreams (ML core,
-intelligence layer, backend/deployment, frontend/mobile) that share a set of
-locked contracts so each piece is independently swappable — now maintained
-solo; the workstream split below still describes which files belong to
-which concern, useful context even without separate owners.
+> **Project Name:** SignTalk AI (Bidirectional AI Communication Bridge for Hearing & Speech Impaired)  
+> **Institution:** RNS Institute of Technology, Bengaluru — Dept. of Information Science & Engineering  
+> **Academic Year:** 2025–2026 | **Batch:** #24  
+> **Target:** Final-Year B.E. Capstone Project, Hackathon/Demo Ready Accessibility Platform & IEEE Publication  
 
-## Current status (as of the last working session)
+---
 
-- **Web (React + FastAPI backend): fully working end-to-end.** Auth,
-  live webcam gesture recognition, sentence correction, Firestore-backed
-  conversation history + analytics, text-to-speech, and an offline-mode
-  toggle are all live and tested.
-- **Gesture classifier**: trained on INCLUDE (ISL), curated down to a
-  **40-word vocabulary** for **89.4% validation accuracy**
-  (`backend/runs/exp_top40_stratified/`, live server's current pointer —
-  see `backend/.env`). Same model/architecture as the earlier
-  `exp_top40_v2` run (64.6%) — the jump came from fixing the *evaluation*,
-  not the model: `signer_id` is a placeholder in `per_video` mode (one fake
-  "signer" per clip), so the default signer-based val split just added
-  arbitrary noise — many of the 40 classes had only 2-3 validation
-  examples, 10 had *zero*. `train_bilstm.py --split_mode stratified`
-  guarantees every class is represented in both train and val. The full
-  262-word model (`backend/runs/exp1/`) still only reaches 6.5% given
-  ~13-16 examples/class — vocabulary breadth vs. reliability is a real
-  tradeoff at this data scale. Live recognition quality also depends on two
-  timing/orientation details — see "Known gotchas" below.
-- **Translation**: code is correct (fixed a bug where it called Google's
-  ADC-authenticated client library instead of using the configured API key
-  via the REST endpoint), but there's no real `GOOGLE_TRANSLATE_API_KEY`
-  yet — Cloud Translation API requires GCP billing to be enabled, which hit
-  an unresolved Google-side billing error (`OR_BACR2_44`) last attempt.
-  Translation degrades gracefully (returns original text) rather than
-  crashing, but doesn't actually translate yet.
-- **Mobile (Flutter)**: code-level bugs are fixed (stale-token reconnect,
-  camera-handle leak, offline-mode cold-start race), and the Flutter SDK is
-  installed locally (`C:\flutter`) — but the Android SDK/emulator setup
-  (needs Android Studio, an interactive GUI install) was deliberately not
-  done, since the web app covers the demo need. `flutter doctor` will show
-  exactly what's still missing.
-- **Datasets**: only INCLUDE is downloaded/preprocessed (all 15 categories,
-  4,257 sequences). WLASL, FER2013, RAF-DB, NPTEL, Samanantar, and
-  AI4Bharat Indic-TTS were deliberately not pursued — none has a training
-  script wired up yet, so downloading them wouldn't unlock anything today.
+## 1. Executive Summary & Core Objective
 
-### Known gotchas (worth remembering before touching the live pipeline again)
+SignTalk AI bridges the two-way communication gap between hearing/speech-impaired individuals and non-signing individuals:
+1. **Deaf/Mute to Hearing**: Real-time sign language gestures captured via webcam $\rightarrow$ 17-point MoveNet pose extraction $\rightarrow$ 30-frame BiLSTM sequence classification $\rightarrow$ Facial emotion detection (DeepFace) $\rightarrow$ LLM/NLP sentence reconstruction & grammar correction (Gemini 2.0 Flash / Flan-T5) $\rightarrow$ Multilingual translation (English, Hindi, Kannada) $\rightarrow$ Audio synthesis (TTS) & visual subtitle rendering.
+2. **Hearing to Deaf/Mute**: Spoken audio stream $\rightarrow$ Real-time speech-to-text (Whisper Small) $\rightarrow$ Immediate live visual captions & conversation log.
+3. **Cloud & Offline Resilience**: Firebase Firestore syncs cross-client dialogues and analytics; a unified `X-Offline-Mode` fallback ensures zero-network operation with local BiLSTM TFLite models, Flan-T5, offline phrasebooks, and Coqui TTS.
 
-- **Webcam must NOT be mirrored.** `frontend/src/components/WebcamView.jsx`
-  deliberately omits react-webcam's `mirrored` prop — it flips the actual
-  captured screenshot pixels, not just the CSS preview, which would
-  mismatch INCLUDE's unmirrored training videos and quietly hurt
-  recognition. Don't re-add it for UX reasons without accounting for this.
-- **`/ws/gesture` needs `frame_skip=2`, not the default 1.** INCLUDE clips
-  average ~2.9s (measured directly against real clips); training resamples
-  each *entire* clip to 30 frames, while live inference just slides a
-  30-frame window over incoming frames. At the frontend's ~20fps capture,
-  `frame_skip=1` only covers ~1.5s — `frame_skip=2` covers ~3s, much closer
-  to real sign duration. This is set in `useGestureSocket.js`'s WS URL.
-  Live accuracy at this setting hadn't been re-validated by a full test
-  pass as of the last session — worth confirming first thing next time.
-- **On-the-fly keypoint augmentation (rotation/scale/jitter/time-warp,
-  `train_bilstm.py --augment`) hurt validation accuracy on this dataset,
-  every magnitude tried.** Three configs (heavy: dropout 0.4/L2/label
-  smoothing → 56%; light: dropout 0.3, no L2/smoothing → 51%; very light,
-  no time-warp → 62%) all landed below the 64.6% no-augmentation run with
-  the same architecture. With only ~666 training sequences across 40
-  classes (~15-17/class) and a validation set drawn from clean,
-  un-augmented clips, augmenting the training distribution pulls it away
-  from what validation actually measures faster than it buys
-  generalization — the usual "augmentation helps small datasets" intuition
-  doesn't hold here without either far more epochs to compensate or a
-  larger dataset. The flags are still there (`--augment`,
-  `--aug_rotation_deg`, etc.) if per-class example counts grow enough to
-  revisit this, just don't reach for `--augment` by default.
+---
 
-## Project structure
+## 2. System Architecture & High-Level Dataflow
 
 ```
-signtalk-ai/
-├── backend/
-│   ├── keypoint_utils.py        # MoveNet extraction, normalization, smoothing, buffering (Person A)
-│   ├── classify.py              # classify_sequence() — single source of truth (Person A)
-│   ├── main.py                  # standalone flat FastAPI app (Prompt A1, local ML-only dev/testing)
-│   ├── train_bilstm.py          # BiLSTM training pipeline, signer/stratified split, TFLite export (Person A)
-│   ├── convert_to_tflite.py     # SavedModel -> float16 TFLite, MoveNet TFLite downloader (Person A)
-│   ├── offline_inference.py     # OfflineGesturePipeline — zero-network on-device inference (Person A)
-│   ├── dataset_tools/           # record_samples, dataset_stats, feedback_queue, build_retraining_dataset,
-│   │                             #   download_include/wlasl/emotion/indic_nlp/indic_tts,
-│   │                             #   preprocess_include (video -> keypoint sequences) (Person A)
-│   ├── emotion.py               # DeepFace emotion analysis + fusion engine (Person B)
-│   ├── nlp_correction.py        # Gemini 2.0 Flash -> Flan-T5-Small fallback sentence correction (Person B)
-│   ├── speech.py                # Whisper Small streaming transcription (Person B)
-│   ├── tts.py                   # gTTS / Coqui TTS (Person B)
-│   ├── translation.py           # phrasebook -> cache -> Firestore -> Google Translate (Person B)
-│   ├── phrasebook.json          # offline EN/HI/KN phrasebook
-│   ├── api/                     # restructured, secured backend (Person C)
-│   │   ├── main.py              # FastAPI app: routers, CORS, rate limiting, error handling
-│   │   ├── socket_manager.py    # Socket.IO wrapping (deployment entrypoint)
-│   │   ├── core/                # config, exceptions, metrics, limiter, offline_mode
-│   │   ├── auth/                # Firebase JWT dependency
-│   │   ├── pose/                # gesture pipeline connection state (reuses Person A's code)
-│   │   ├── emotion/, ai/, speech/, translation/, analytics/   # REST routers
-│   │   ├── websocket/           # /ws/gesture, /ws/speech
-│   │   └── firebase/            # Firestore/Storage client
-│   ├── firestore.rules
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   ├── requirements.txt
-│   └── .env.example
-├── frontend/                    # React web dashboard (Person D)
-└── mobile/                      # Flutter mobile app (Person D)
+   [ WEBCAM INPUT ]                                [ MICROPHONE INPUT ]
+          │ (20-30 fps frames)                              │ (WebM/Opus audio chunks)
+          ▼                                                 ▼
+  [ MoveNet Thunder ] (17 Keypoints)               [ Whisper Small STT ] (/ws/speech)
+          │                                                 │
+  [ Normalization & Smoothing ]                             ▼
+          │                                        [ Live Hearing Subtitles ]
+          ▼                                                 │
+  [ 30-Frame Rolling Buffer ]                               ▼
+          │                                        [ Conversation History ]
+          ▼
+  [ BiLSTM Classifier ] (runs/exp_top40_stratified)
+          │ (Top gesture label, debounced)
+          ├────────────────────────┐
+          ▼                        ▼
+  [ Facial Emotion ]       [ Raw Gesture Tokens ]
+     (DeepFace 7-cls)              │
+          │                        │
+          └───────────┬────────────┘
+                      ▼
+            [ NLP Correction ]
+     (Primary: Gemini 2.0 Flash | Offline: Flan-T5)
+                      │
+                      ▼
+           [ Grammatical Sentence ]
+                      │
+          ┌───────────┴────────────┐
+          ▼                        ▼
+  [ Translation Engine ]    [ Text-to-Speech ]
+   (Google Translate /       (gTTS / Coqui TTS)
+    Offline Phrasebook)            │
+          │                        ▼
+          ▼                 [ Speaker Output ]
+  [ React Subtitle Bar ]
 ```
 
-## Locked contracts (do not change signatures without updating every caller)
+---
 
-- `classify_sequence(sequence: np.ndarray)` — input `(30, 17, 2)`, output `{"label": str, "confidence": float}`
-- `/ws/gesture` emits `{"label": str, "confidence": float, "timestamp": float}`, debounced (3+ agreeing frames, 1.5s cooldown), plus `{"type": "corrected_sentence", "sentence": str, "source": "gemini"|"flan-t5", "low_confidence": bool}`
-- `correct_sentence(gesture_tokens, emotion, conversation_history, force_offline=False)` → `{"sentence": str, "source": str, "low_confidence": bool}`
-- `translate_text(text, target_lang, offline=False)` → `str`
-- `synthesize_speech(text, lang, mode)` → raw audio `bytes`
-- 17 keypoints / MoveNet **Thunder** (not 33) — locked team-wide
+## 3. Technology Stack & Key Dependencies
 
-## Local dev setup
+| Subsystem | Primary Technology | Fallback / Offline / Alternate |
+|---|---|---|
+| **Pose / Keypoint Extraction** | TensorFlow Hub MoveNet Thunder (`singlepose/thunder/4`, 17 keypoints) | Cached local TFLite (`models/movenet.tflite`) |
+| **Gesture Sequence Model** | TensorFlow / Keras Bidirectional LSTM (128 units, Dropout 0.3) | Quantized Float16 TFLite (`models/bilstm.tflite`) |
+| **Facial Emotion Recognition** | DeepFace (7 classes: happy, sad, angry, fear, surprise, neutral, disgust) | Evaluated every 10th frame; defaults to `neutral` |
+| **NLP Sentence Correction** | Google Gemini 2.0 Flash (`google-generativeai`) | Local Hugging Face `google/flan-t5-small` |
+| **Speech-to-Text (STT)** | OpenAI Whisper Small (local `openai-whisper` / `transformers`) | Web Audio API / browser native STT |
+| **Text-to-Speech (TTS)** | Google Text-to-Speech (`gTTS`) | Coqui TTS (`your_tts` offline model) |
+| **Multilingual Translation** | Google Cloud Translation API (`en`, `hi`, `kn`) | Local in-memory LRU $\rightarrow$ Firestore $\rightarrow$ `phrasebook.json` |
+| **Backend & Realtime** | FastAPI, Uvicorn, Python-SocketIO, WebSockets | Docker, Docker Compose |
+| **Auth & Database** | Firebase Authentication (JWT/Bearer), Firestore, Firebase Storage | Mock dev token verification |
+| **Web Frontend** | React.js (Vite), Tailwind CSS, Framer Motion, Axios, Recharts, Lucide | Responsive glassmorphic UI |
+| **Mobile App (Optional)** | Flutter, Riverpod, TFLite Flutter | Cross-platform mobile (Android/iOS) |
 
+---
+
+## 4. Locked Interface Contracts (DO NOT BREAK)
+
+1. **Keypoint Extraction Count**: Exactly **17 keypoints** (MoveNet Thunder standard), **never 33** (MediaPipe standard).
+2. **Gesture Classifier Signature**:
+   ```python
+   def classify_sequence(sequence: np.ndarray) -> dict[str, Any]:
+       # Input shape: (30, 17, 2)
+       # Output: {"label": str, "confidence": float}
+   ```
+3. **Stabilization Rules**:
+   - 3+ consecutive matching predictions required before emitting.
+   - 1.5-second cooldown before the same label can emit again.
+4. **WebSocket `/ws/gesture` Protocol**:
+   - Client sends: `{ "frame": "base64_encoded_jpeg" }` at 20–30 FPS.
+   - Server returns: `{"label": str, "confidence": float, "timestamp": float}` and `{"type": "corrected_sentence", "sentence": str, "source": str, "low_confidence": bool}`.
+5. **Shared Offline Mode**:
+   - Triggered via HTTP header `X-Offline-Mode: true` or query param `?offline=true`.
+   - Handled uniformly in `backend/api/core/offline_mode.py`.
+
+---
+
+## 5. Critical Gotchas & Immediate Fixes
+
+1. **Unmirrored Webcam Orientation**:
+   - In `frontend/src/components/WebcamView.jsx`, react-webcam must **NOT** have `mirrored={true}` enabled. Flipping pixels changes left/right hand coordinates and drops recognition accuracy.
+2. **WebSocket Frame Skip (`frame_skip=2`)**:
+   - Real sign gestures take ~2.5–3.0 seconds. At 20 FPS, 30 frames is only 1.5 seconds. The WebSocket connection URL must pass `?frame_skip=2` so the 30-frame buffer spans 3 seconds.
+3. **MoveNet Cache Corruption**:
+   - If backend crashes at startup with `ValueError: ... contains neither saved_model.pb nor saved_model.pbtxt`, clear `%TEMP%\tfhub_modules`.
+4. **Translation API Key & GCP Billing**:
+   - If `GOOGLE_TRANSLATE_API_KEY` is not set or billing is inactive, translation falls back to original text or `phrasebook.json`. Ensure offline fallback doesn't throw 500s.
+5. **Firebase Service Account**:
+   - Development requires `backend/secrets/firebase-service-account.json`. If missing, verify `backend/api/firebase/firebase_client.py` handles mock mode cleanly.
+
+---
+
+## 6. Local Quickstart (How to Run Everything)
+
+### Prerequisites
+- Python 3.10+ (Virtual environment in `backend/venv`)
+- Node.js 18+ & npm
+- Git
+
+### Backend Setup
 ```bash
 cd backend
-python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
+# Windows:
+.\venv\Scripts\activate
+# Install deps (if fresh):
 pip install -r requirements.txt
-cp .env.example .env   # fill in real API keys / Firebase service account path
+# Copy environment file:
+cp .env.example .env
 
-# Run the restructured, secured backend:
-uvicorn api.socket_manager:socket_app --reload
-
-# Or, run docker-compose (production-shaped, needs secrets/firebase-service-account.json):
-docker-compose up --build
+# Run FastAPI with Socket.IO:
+uvicorn api.socket_manager:socket_app --host 127.0.0.1 --port 8000 --reload
 ```
+Swagger Documentation: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-Swagger docs: `http://localhost:8000/docs`
-
-## Training the gesture classifier
-
-1. Collect data: `python dataset_tools/record_samples.py --class HELLO --signer_id s01 --batch 5`
-2. Check balance: `python dataset_tools/dataset_stats.py --labels_csv data/labels.csv`
-3. Train: `python train_bilstm.py --data_dir data/sequences --labels_csv data/labels.csv --output_dir runs/exp1`
-4. Convert to TFLite (if not already exported by step 3): `python convert_to_tflite.py --saved_model runs/exp1/saved_model --output runs/exp1/bilstm.tflite`
-5. Cache MoveNet's TFLite build: `python convert_to_tflite.py --download_movenet`
-6. Point the live server at the trained model:
-   ```bash
-   export SIGNTALK_BILSTM_SAVEDMODEL=runs/exp1/saved_model
-   export SIGNTALK_LABELS_JSON=runs/exp1/labels.json
-   ```
-   (`classify.py` picks these up automatically — no other code changes needed.)
-
-**If per-class examples are too sparse for decent accuracy** (INCLUDE
-averages ~13-16 examples/class across 262 classes — full-vocabulary
-accuracy bottoms out around 6.5%), curate a smaller, better-represented
-subset instead of retraining on everything:
-```python
-import pandas as pd
-df = pd.read_csv("data/labels.csv")
-top_k = df["class"].value_counts().head(40).index.tolist()
-df[df["class"].isin(top_k)].to_csv("data/labels_top40.csv", index=False)
+### Frontend Setup
+```bash
+cd frontend
+npm install
+npm run dev
 ```
-then train against `data/labels_top40.csv` — fewer classes to distinguish
-between means meaningfully higher accuracy from the same data (62.9% on 40
-classes vs. 6.5% on 262, in practice). Trades vocabulary breadth for
-reliability; worth it for a demo, not a substitute for more data long-term.
+Web Application: [http://localhost:3000](http://localhost:3000)
 
-## Datasets
+---
 
-Raw dataset downloads don't belong in this repo (INCLUDE is several GB,
-Samanantar/NPTEL are much bigger) — download straight into whatever
-environment you're training in (Colab/Kaggle), not to a laptop for
-re-upload. `backend/dataset_tools/download_*.py` automate the pull; each
-defaults its output dir to `/content/datasets/...` on Colab or
-`/kaggle/working/datasets/...` on Kaggle, falling back to
-`backend/data/raw/...` (gitignored) when run locally.
+## 7. Model Training & Datasets
 
-| Script | Dataset | Access | Wired into existing code? |
-|---|---|---|---|
-| `download_include.py --categories ...` | INCLUDE (ISL) | open, 44 files on Zenodo (~50GB for all 15 categories — pick a subset with `--categories`, or `--list` to see sizes first). **Already downloaded + preprocessed** (all 15 categories, 4,257 sequences in `backend/data/sequences/` + `backend/data/labels.csv`) as of the last session. | yes, via `preprocess_include.py` — see below |
-| `download_wlasl.py` | WLASL | open, per-clip scrape (some links rot) | after preprocessing — see below |
-| `download_emotion.py --raf_db_archive ...` | RAF-DB | gated — license request required | no training script yet |
-| `download_emotion.py --fer2013` | FER2013 | open, via kagglehub | no training script yet |
-| `download_indic_nlp.py --nptel` | NPTEL ("BhasaAnuvaad") | open, via HF `datasets` | no training script yet |
-| `download_indic_nlp.py --samanantar` | Samanantar | open, via HF `datasets` | no training script yet |
-| `download_indic_tts.py` | AI4Bharat Indic-TTS | open, GitHub + README-linked checkpoints | no — `tts.py` uses Coqui's own pretrained `your_tts` model, not this |
+- **Preprocessed Dataset**: Located in `backend/data/sequences/` and mapped via `backend/data/labels.csv` (INCLUDE dataset, 4,257 sequences).
+- **Curated 40-Word Model**:
+  ```bash
+  python train_bilstm.py --data_dir data/sequences --labels_csv data/labels_top40.csv --split_mode stratified --output_dir runs/exp_top40_stratified
+  ```
+- **TFLite Conversion**:
+  ```bash
+  python convert_to_tflite.py --saved_model runs/exp_top40_stratified/saved_model --output models/bilstm.tflite
+  ```
 
-Note: an earlier version of `download_include.py` pointed at a single
-`INCLUDE.zip` that doesn't exist (404) — the real dataset is 44 separate
-files (verified against `zenodo.org/api/records/4010759`), which is why
-`--categories`/`--list` exist.
+---
 
-**INCLUDE → train_bilstm.py**: `train_bilstm.py` expects `(30, 17, 2)`
-MoveNet keypoint sequences + `labels.csv` (the same format
-`record_samples.py` writes), but INCLUDE ships raw `.MOV`/`.MP4` clips.
-`dataset_tools/preprocess_include.py` converts a downloaded INCLUDE
-category into that format, reusing `keypoint_utils.py`'s
-`extract_keypoints()`/`normalize_keypoints()`/`TemporalSmoother` — verified
-end-to-end (real internal zip structure, synthetic-video fixture, output
-consumed successfully by `dataset_stats.py`).
+## 8. Prioritized Task List (For the Next Few Days)
 
-**Caveat that matters if you train on this**: INCLUDE's folder/file
-structure (`<Category>/<idx>. <Word>/<camera-file>.MOV`) does not encode
-which physical signer recorded each clip — there's no signer field
-anywhere in the dataset as shipped. `train_bilstm.py` splits train/val BY
-SIGNER specifically to prevent identity leakage; `preprocess_include.py`'s
-`signer_id` is therefore a placeholder (`--signer_id_mode per_video`, one
-signer per clip, or `per_session`, an unverified heuristic grouping
-near-consecutive camera file numbers) — not real signer identity. Treat
-val accuracy from INCLUDE-only training as optimistic until real signer
-metadata is sourced.
-
-**WLASL → train_bilstm.py**: still needs the same kind of
-video→sequence preprocessing step; `preprocess_include.py` isn't reused
-as-is since WLASL's on-disk layout differs from INCLUDE's.
-
-The emotion/translation/TTS datasets are acquisition-only for now:
-`emotion.py`, `translation.py`, `nlp_correction.py`, and `tts.py` all call
-pretrained/hosted models (DeepFace, Google Translate, Gemini + Flan-T5-Small,
-gTTS/Coqui) with no fine-tuning script in this repo — these downloads
-matter once someone adds one.
-
-## Offline mode ("airplane-mode demo")
-
-Set the `X-Offline-Mode: true` header or `?offline=true` query param on any
-REST call (or on `/ws/gesture` / `/ws/speech` connections). This is resolved
-once, centrally, in `backend/api/core/offline_mode.py::get_offline_mode`,
-and:
-- `/ai/predict` skips Gemini, uses Flan-T5-Small only
-- `/translate` only checks the offline phrasebook (no network/Firestore)
-- `/text-to-speech` forces Coqui TTS regardless of the requested mode
-
-On-device (zero-network) inference for the gesture pipeline itself uses
-`offline_inference.py`'s `OfflineGesturePipeline`, loading
-`models/movenet.tflite` + `models/bilstm.tflite` + `models/labels.json`.
-
-## Deployment
-
-**Backend** — Railway or Render:
-- Point the service at `backend/`, using the provided `Dockerfile`.
-- Set env vars from `.env.example` in the platform's dashboard (never commit
-  real secrets): `GEMINI_API_KEY`, `GOOGLE_TRANSLATE_API_KEY`,
-  `FIREBASE_SERVICE_ACCOUNT_PATH` (mount as a secret file),
-  `FIREBASE_STORAGE_BUCKET`, `CORS_ORIGIN_WEB`, `CORS_ORIGIN_PROD`.
-
-**Frontend** — Vercel or Firebase Hosting:
-- Build command: `npm run build` (Vite). Set `VITE_API_BASE_URL` and
-  Firebase web config (`VITE_FIREBASE_*`) in the platform's dashboard.
-
-**Mobile** — distribute the Flutter build via your usual channel; point
-`lib/services/api_service.dart`'s base URL at the deployed backend.
-
-## Implementation notes (useful for picking this back up later)
-
-- `classify_sequence()` lives in `classify.py` (imported by both the flat
-  `main.py` and `api/pose/service.py`) — single source of truth. It loads
-  the trained SavedModel via `tf.saved_model.load(...).signatures[...]`,
-  **not** `tf.keras.layers.TFSMLayer` — that's a Keras-3-only API that
-  doesn't exist on the legacy Keras 2 bundled with this project's TF 2.15.
-- `/ws/gesture` sits behind `api/websocket/`, with `frame_skip` and
-  `offline` query params (see "Known gotchas" above for why `frame_skip=2`
-  matters). It also persists corrected sentences to Firestore and
-  broadcasts them over Socket.IO — this was originally only wired into the
-  unused `/ai/predict` REST route, so if conversation history/analytics
-  ever look stale again, check that this side effect is still present here.
-- `correct_sentence()`, `translate_text()`, and `synthesize_speech()` are
-  called with the offline flag already resolved centrally by
-  `get_offline_mode()` — don't add per-route header-checking. Flan-T5-Small
-  needs its own simple few-shot prompt (`_build_flan_t5_prompt` in
-  `nlp_correction.py`) — it can't follow Gemini's richer multi-part prompt
-  and will echo instruction fragments back if given it.
-- Swagger docs at `/docs`. Allowed CORS origins are `http://localhost:3000`
-  and `https://signtalk.vercel.app` — dev server must run on port 3000.
-  Socket.IO event name for realtime sync is `"conversation:new"`, and its
-  `connect` handler verifies the Firebase token itself (never trust a
-  client-supplied uid). All requests need a Firebase Auth Bearer token
-  except `/health`. WebSocket auth is passed as `?token=<jwt>` (browsers
-  can't set custom WS headers).
-- TTS: Coqui (`TTS` package, offline mode) is an optional dependency not
-  installed by default (`requirements-offline-tts.txt`, kept separate due
-  to dependency conflicts) — `synthesize_speech()` falls back to gTTS if
-  Coqui isn't available, rather than failing offline mode entirely.
+1. [ ] **Verify Live Gesture Recognition**: Test with `frame_skip=2` and unmirrored camera; confirm latency < 250ms.
+2. [ ] **Fix Firebase Credentials / Mock Mode**: Ensure smooth login & conversation history retrieval even without live GCP billing.
+3. [ ] **Gemini Prompt Tuning**: Refine prompt in `backend/nlp_correction.py` for snappy, natural conversational outputs.
+4. [ ] **Translation & Indic Languages**: Verify English $\rightarrow$ Hindi / Kannada translation and speech playback.
+5. [ ] **Finalize Presentation / Paper Assets**: Export confusion matrices from `runs/`, record UI walkthrough, and compile IEEE Phase-2 report.

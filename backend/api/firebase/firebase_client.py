@@ -88,6 +88,27 @@ def get_conversation_history(user_id: str, limit: int = 50) -> list[dict]:
     return results
 
 
+def delete_conversation_history(user_id: str) -> int:
+    """Deletes every conversation belonging to one user and returns its count."""
+    docs = (
+        _db()
+        .collection(COLLECTION_CONVERSATIONS)
+        .where("user_id", "==", user_id)
+        .stream()
+    )
+    batch = _db().batch()
+    deleted = 0
+    for doc in docs:
+        batch.delete(doc.reference)
+        deleted += 1
+        if deleted % 400 == 0:
+            batch.commit()
+            batch = _db().batch()
+    if deleted % 400:
+        batch.commit()
+    return deleted
+
+
 # ---------------------------------------------------------------------------
 # emotion_logs / gesture_logs
 # ---------------------------------------------------------------------------

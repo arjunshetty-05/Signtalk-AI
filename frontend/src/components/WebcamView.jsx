@@ -1,9 +1,8 @@
 // WebcamView.jsx — SignTalk AI web dashboard
 //
-// Captures frames via react-webcam at ~20fps and streams them out via the
-// sendFrame callback (from useGestureSocket, owned by App.jsx so other
-// panels like AnalyticsPanel can share the same connection's data). Renders
-// a live label overlay that animates in on each new (sparse, debounced)
+// Renders a live camera preview and captures a complete clip only when the
+// user explicitly starts a recording. Renders a label overlay that animates
+// in on each new result (sparse, debounced)
 // event and lingers until either a new label arrives or LABEL_TIMEOUT_MS
 // passes — it does NOT re-trigger the pulse animation on every render/frame.
 //
@@ -22,7 +21,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { WS_BASE_URL } from "../firebase.js";
 import { apiClient, useAuth } from "../context/AuthProvider.jsx";
 
-const CAPTURE_FPS = 20;
 const LABEL_TIMEOUT_MS = 4000;
 const SPEECH_RECONNECT_DELAY_MS = 2000;
 // Downscaled capture width for demo-clip frames sent to /pose/classify-clip
@@ -37,7 +35,15 @@ const RECORD_DURATION_MS = 3000;
 // shown as if it were reliable. Data-backed (see api/pose/service.py's
 // MIN_EMIT_CONFIDENCE comment): wrong guesses across the 262-class model
 // almost never exceed ~58% confidence, correct ones are usually 75%+.
-const LOW_CONFIDENCE_THRESHOLD = 0.5;
+const LOW_CONFIDENCE_THRESHOLD = 0.30;
+const SUPPORTED_SIGN_LABELS = [
+  "Boy", "Brother", "Brown", "Cow", "Good afternoon", "Grey",
+  "How are you", "Pleased", "Thank you", "Train", "Transportation",
+  "bad", "big large", "cool", "dry", "fast", "good", "he", "healthy",
+  "hot", "it", "long", "loud", "narrow", "new", "old", "she", "short",
+  "sick", "slow", "small little", "tall", "they", "warm", "we", "wet",
+  "wide", "you", "you (plural)", "young",
+];
 
 // "Record sign": captures RECORD_DURATION_MS of the user's OWN live webcam,
 // then submits it to the same /pose/classify-clip whole-clip pipeline the
@@ -163,6 +169,7 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
   const [recordSecondsLeft, setRecordSecondsLeft] = useState(0);
   const [recordConfidence, setRecordConfidence] = useState(null);
   const recordFramesRef = useRef([]);
+  const [vocabularyOpen, setVocabularyOpen] = useState(false);
 
   const startDemo = useCallback((clipId) => {
     if (clipId) setSelectedClipId(clipId);
@@ -200,17 +207,6 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
     }
   }, [onDemoResult]);
 
-  // Stream frames at ~CAPTURE_FPS from the live webcam. (Demo-clip capture
-  // is handled by a separate effect below.)
-  useEffect(() => {
-    if (demoMode) return undefined;
-    const interval = setInterval(() => {
-      const screenshot = webcamRef.current?.getScreenshot();
-      if (screenshot) sendFrame(screenshot);
-    }, 1000 / CAPTURE_FPS);
-    return () => clearInterval(interval);
-  }, [sendFrame, demoMode]);
-
   const handleRecordFinished = useCallback(async () => {
     setRecordStatus("processing");
     const frames = recordFramesRef.current;
@@ -224,18 +220,14 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
       // for a recording the user has since moved on from (e.g. switched to
       // demo mode while this POST was in flight).
       if (demoModeRef.current) return;
-      onDemoResult?.(data);
-      // Unlike the demo clips (always verified 84%+), a live recording can
-      // legitimately land on a near-guess — e.g. 17.8% confidence across
-      // 262 classes is barely above chance. classify-clip has no
-      // confidence gate (a single explicit attempt should always return
-      // *something*, unlike the continuous live stream), so the frontend
-      // has to flag low confidence itself instead of presenting a fully-
-      // formed sentence as if it were reliable. `data.low_confidence` is a
-      // different signal (NLP paraphrase word-overlap, not gesture
-      // confidence) so it's not usable here — check confidence directly.
       setRecordConfidence(data.confidence);
-      setRecordStatus(data.confidence < LOW_CONFIDENCE_THRESHOLD ? "uncertain" : "recognized");
+      if (data.label && data.label !== "No sign detected") {
+        onDemoResult?.(data);
+        setRecordStatus(data.confidence < LOW_CONFIDENCE_THRESHOLD || data.low_confidence ? "uncertain" : "recognized");
+      } else {
+        onDemoReset?.();
+        setRecordStatus("no-result");
+      }
     } catch {
       if (!demoModeRef.current) setRecordStatus("no-result");
     }
@@ -350,6 +342,21 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
     };
   }, [demoMode, demoStatus]);
 
+  // Live continuous webcam streaming: when not in demo mode and not recording,
+  // continuously capture screenshots and send them over the WebSocket via sendFrame.
+  useEffect(() => {
+    if (demoMode || recordStatus === "recording" || !connected || !sendFrame) {
+      return undefined;
+    }
+    const interval = setInterval(() => {
+      const image = webcamRef.current?.getScreenshot();
+      if (image) {
+        sendFrame(image);
+      }
+    }, 60); // ~16 fps capture rate sent live to /ws/gesture
+    return () => clearInterval(interval);
+  }, [demoMode, recordStatus, connected, sendFrame]);
+
   // Show label on new event, then fade after a timeout (not per-frame)
   useEffect(() => {
     if (!latestLabel) return undefined;
@@ -424,12 +431,40 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
             : recordStatus === "no-result"
             ? "No result — try again"
             : connected
-            ? "Live"
+            ? "Ready"
             : "Reconnecting..."}
         </span>
       </div>
 
       <div className="absolute bottom-4 left-4 flex flex-col items-start gap-2">
+        {vocabularyOpen && (
+          <div className="w-[min(28rem,calc(100vw-2rem))] rounded-xl bg-black/80 backdrop-blur-md border border-white/10 p-3 shadow-xl">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div>
+                <h2 className="text-sm font-semibold text-white">Supported signs</h2>
+                <p className="text-[11px] text-neutral-400">Record one complete sign at a time.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setVocabularyOpen(false)}
+                className="text-xs text-neutral-400 hover:text-white"
+                aria-label="Close supported signs"
+              >
+                Close
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+              {SUPPORTED_SIGN_LABELS.map((label) => (
+                <span key={label} className="rounded-md bg-white/10 px-2 py-1 text-[11px] text-neutral-200">
+                  {label}
+                </span>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-neutral-500">
+              Keep both hands visible, stay centered, use bright front lighting, and pause after each sign.
+            </p>
+          </div>
+        )}
         {demoMode && (
           <div className="flex items-center gap-1 flex-wrap max-w-xs">
             {DEMO_CLIPS.map((clip) => (
@@ -450,6 +485,13 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
           </div>
         )}
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setVocabularyOpen((open) => !open)}
+            className="px-3 py-1.5 rounded-lg text-xs glass-panel border-white/20 text-neutral-200 hover:text-neon transition-colors"
+          >
+            {vocabularyOpen ? "Hide signs" : "Supported signs"}
+          </button>
           <button
             type="button"
             onClick={() => (demoMode ? stopDemo() : startDemo())}
@@ -478,7 +520,7 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
                 ? `Recording ${recordSecondsLeft}s`
                 : recordStatus === "processing"
                 ? "Processing..."
-                : "Record sign (any word)"}
+                : "Record trained sign"}
             </button>
           )}
         </div>

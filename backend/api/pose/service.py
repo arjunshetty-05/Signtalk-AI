@@ -25,21 +25,10 @@ from keypoint_utils import (
 
 SEQUENCE_LENGTH = 30
 SMOOTHING_WINDOW = 4
-STABILIZATION_AGREEMENT_COUNT = 3
-COOLDOWN_SECONDS = 1.5
-# Below this, a prediction is suppressed entirely (treated as "nothing
-# recognized yet") rather than displayed. Re-measured after expanding the
-# deployed model from 40 to 262 classes (exp_all262_reg): on a 200-example
-# sample, correct whole-clip predictions had median confidence 88.8% and
-# wrong ones almost never exceeded 58% (p90 = 57.6%), so 0.55 lets through
-# ~0 wrong guesses in that sample while keeping a few more correct ones
-# than the old 0.65 did. Note this was measured on whole-clip
-# classification (matching /pose/classify-clip's preprocessing) — live
-# /ws/gesture streaming uses a sliding window instead, which sees
-# incomplete gesture motion more often now that there are 262 candidate
-# classes to confuse it with instead of 40, so don't expect this alone to
-# fix live-feed responsiveness. Tune if it feels too strict/lenient.
-MIN_EMIT_CONFIDENCE = 0.55
+STABILIZATION_AGREEMENT_COUNT = 2
+COOLDOWN_SECONDS = 1.0
+MIN_SEQUENCE_MOTION = 0.003
+MIN_EMIT_CONFIDENCE = 0.25
 
 
 class GestureConnectionState:
@@ -58,6 +47,7 @@ class GestureConnectionState:
         self._recent_predictions: deque[str] = deque(maxlen=STABILIZATION_AGREEMENT_COUNT)
         self._last_emitted_label: str | None = None
         self._last_emitted_at: float = 0.0
+        self._ready_for_emission = True
 
     def process_frame(self, frame_bgr: np.ndarray) -> tuple[dict | None, float]:
         """Returns (emission_or_None, inference_latency_ms)."""
@@ -75,6 +65,14 @@ class GestureConnectionState:
         if sequence is None:
             return None, (time.time() - start) * 1000
 
+        # A static camera view can still produce a complete pose sequence;
+        # reject it before the classifier turns pose noise into a gesture.
+        motion = np.mean(np.linalg.norm(np.diff(sequence, axis=0), axis=-1))
+        if motion < MIN_SEQUENCE_MOTION:
+            self._recent_predictions.clear()
+            self._ready_for_emission = True
+            return None, (time.time() - start) * 1000
+
         result = classify_sequence(sequence)
         latency_ms = (time.time() - start) * 1000
         return self._stabilize(result), latency_ms
@@ -84,6 +82,10 @@ class GestureConnectionState:
         now = time.time()
 
         if confidence < MIN_EMIT_CONFIDENCE:
+            self._recent_predictions.clear()
+            return None
+
+        if not self._ready_for_emission:
             return None
 
         self._recent_predictions.append(label)
@@ -99,4 +101,5 @@ class GestureConnectionState:
 
         self._last_emitted_label = label
         self._last_emitted_at = now
+        self._ready_for_emission = False
         return {"label": label, "confidence": confidence, "timestamp": now}

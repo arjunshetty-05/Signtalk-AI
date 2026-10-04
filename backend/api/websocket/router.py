@@ -33,7 +33,7 @@ logger = logging.getLogger("signtalk.websocket")
 router = APIRouter()
 _executor = ThreadPoolExecutor(max_workers=2)
 
-GESTURE_TOKENS_BEFORE_CORRECTION = 3
+GESTURE_TOKENS_BEFORE_CORRECTION = 1
 
 
 async def _authenticate_ws(websocket: WebSocket, token: str | None) -> CurrentUser | None:

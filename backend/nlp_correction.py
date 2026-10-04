@@ -147,6 +147,13 @@ def correct_sentence(
     if not tokens:
         return {"sentence": "", "source": "flan-t5", "low_confidence": True}
 
+    if force_offline and len(tokens) == 1:
+        return {
+            "sentence": f"{tokens[0].capitalize()}.",
+            "source": "flan-t5",
+            "low_confidence": False,
+        }
+
     sentence = None if force_offline else _call_gemini(_build_prompt(tokens, emotion, conversation_history))
     source = "gemini"
     if sentence is None:

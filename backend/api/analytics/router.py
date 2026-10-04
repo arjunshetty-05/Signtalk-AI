@@ -57,6 +57,10 @@ class FeedbackResponse(BaseModel):
     filename: str
 
 
+class ClearHistoryResponse(BaseModel):
+    deleted: int
+
+
 @router.get("/metrics", response_model=MetricsResponse)
 @limiter.limit(settings.RATE_LIMIT_READONLY)
 async def get_metrics(request: Request, user: CurrentUser = Depends(get_current_user)):
@@ -85,6 +89,22 @@ async def get_conversations(
         logger.exception("get_conversation_history failed for user %s — returning empty list", user_id)
         history = []
     return [ConversationEntry(**entry) for entry in history]
+
+
+@router.delete("/conversations/{user_id}", response_model=ClearHistoryResponse)
+@limiter.limit(settings.RATE_LIMIT_PREDICTION)
+async def clear_conversations(
+    request: Request,
+    user_id: str,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Deletes only the authenticated user's conversation history."""
+    if user_id != user.uid:
+        raise ForbiddenError("You can only delete your own conversation history")
+    from api.firebase.firebase_client import delete_conversation_history
+
+    deleted = delete_conversation_history(user_id)
+    return ClearHistoryResponse(deleted=deleted)
 
 
 @router.post("/analytics/feedback", response_model=FeedbackResponse)
