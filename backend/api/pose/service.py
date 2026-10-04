@@ -28,12 +28,18 @@ SMOOTHING_WINDOW = 4
 STABILIZATION_AGREEMENT_COUNT = 3
 COOLDOWN_SECONDS = 1.5
 # Below this, a prediction is suppressed entirely (treated as "nothing
-# recognized yet") rather than displayed — at 39 classes, chance level is
-# ~2.6%, so 40-60% isn't nothing, but live testing showed this band is
-# where wrong guesses live most often. Doesn't improve the model's
-# underlying accuracy, just stops low-confidence guesses from being shown
-# as if they were confident answers. Tune if it feels too strict/lenient.
-MIN_EMIT_CONFIDENCE = 0.65
+# recognized yet") rather than displayed. Re-measured after expanding the
+# deployed model from 40 to 262 classes (exp_all262_reg): on a 200-example
+# sample, correct whole-clip predictions had median confidence 88.8% and
+# wrong ones almost never exceeded 58% (p90 = 57.6%), so 0.55 lets through
+# ~0 wrong guesses in that sample while keeping a few more correct ones
+# than the old 0.65 did. Note this was measured on whole-clip
+# classification (matching /pose/classify-clip's preprocessing) — live
+# /ws/gesture streaming uses a sliding window instead, which sees
+# incomplete gesture motion more often now that there are 262 candidate
+# classes to confuse it with instead of 40, so don't expect this alone to
+# fix live-feed responsiveness. Tune if it feels too strict/lenient.
+MIN_EMIT_CONFIDENCE = 0.55
 
 
 class GestureConnectionState:
