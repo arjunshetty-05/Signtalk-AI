@@ -33,7 +33,11 @@ const DEMO_CAPTURE_WIDTH = 480;
 
 // Fallback demo path: replays a known-good INCLUDE clip (real recorded sign,
 // already verified to classify correctly) instead of the live webcam, so a
-// demo doesn't depend on live camera/lighting/signing conditions.
+// demo doesn't depend on live camera/lighting/signing conditions. Six clips
+// so the demo isn't just one fixed example — each verified independently
+// (POST /pose/classify-clip, downscaled+JPEG-compressed like the browser
+// actually sends): Summer 99.1%, Spring 99.4%, Winter 95.7%, Fall 99.7%,
+// Monsoon 100.0%, Season 98.1%.
 //
 // Frames are NOT streamed through the live /ws/gesture pipeline. That
 // pipeline runs a continuously-sliding 30-frame trailing window, built for
@@ -46,7 +50,14 @@ const DEMO_CAPTURE_WIDTH = 480;
 // which mirrors the *training* preprocessing — extract every frame, smooth,
 // then uniformly resample the whole clip to 30 frames — so it reproduces
 // the accuracy verified offline instead of the live streaming approximation.
-const DEMO_CLIP_SRC = "/demo/summer.mov";
+const DEMO_CLIPS = [
+  { id: "summer", label: "Summer", src: "/demo/summer.mov" },
+  { id: "spring", label: "Spring", src: "/demo/spring.mov" },
+  { id: "winter", label: "Winter", src: "/demo/winter.mov" },
+  { id: "fall", label: "Fall", src: "/demo/fall.mov" },
+  { id: "monsoon", label: "Monsoon", src: "/demo/monsoon.mov" },
+  { id: "season", label: "Season", src: "/demo/season.mov" },
+];
 
 // Mirrors useGestureSocket's reconnect pattern — without onclose/onerror
 // handling, once this socket closed for any reason (server restart, network
@@ -111,8 +122,11 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
   // no feedback reads as "nothing is happening" to someone watching a demo.
   const [demoStatus, setDemoStatus] = useState("idle");
   const [replayTick, setReplayTick] = useState(0);
+  const [selectedClipId, setSelectedClipId] = useState(DEMO_CLIPS[0].id);
+  const selectedClip = DEMO_CLIPS.find((c) => c.id === selectedClipId) ?? DEMO_CLIPS[0];
 
-  const startDemo = useCallback(() => {
+  const startDemo = useCallback((clipId) => {
+    if (clipId) setSelectedClipId(clipId);
     setDemoMode(true);
     setDemoStatus("playing");
     demoFramesRef.current = [];
@@ -212,9 +226,9 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
     <div className="relative w-full h-full rounded-2xl overflow-hidden glass-panel">
       {demoMode ? (
         <video
-          key={replayTick}
+          key={`${selectedClipId}-${replayTick}`}
           ref={demoVideoRef}
-          src={DEMO_CLIP_SRC}
+          src={selectedClip.src}
           className="w-full h-full object-cover"
           autoPlay
           muted
@@ -261,23 +275,44 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
         </span>
       </div>
 
-      <div className="absolute bottom-4 left-4 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={demoMode ? stopDemo : startDemo}
-          className="px-3 py-1.5 rounded-lg text-xs glass-panel border-neon/40 text-neutral-200 hover:text-neon transition-colors"
-        >
-          {demoMode ? "Switch to live camera" : "Play demo clip"}
-        </button>
-        {demoMode && (demoStatus === "recognized" || demoStatus === "no-result") && (
+      <div className="absolute bottom-4 left-4 flex flex-col items-start gap-2">
+        {demoMode && (
+          <div className="flex items-center gap-1 flex-wrap max-w-xs">
+            {DEMO_CLIPS.map((clip) => (
+              <button
+                key={clip.id}
+                type="button"
+                onClick={() => startDemo(clip.id)}
+                disabled={demoStatus === "playing" || demoStatus === "processing"}
+                className={`px-2 py-1 rounded-md text-[11px] transition-colors disabled:opacity-40 ${
+                  clip.id === selectedClipId
+                    ? "bg-neon/20 text-neon border border-neon/50"
+                    : "glass-panel text-neutral-300 hover:text-neon"
+                }`}
+              >
+                {clip.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={startDemo}
+            onClick={() => (demoMode ? stopDemo() : startDemo())}
             className="px-3 py-1.5 rounded-lg text-xs glass-panel border-neon/40 text-neutral-200 hover:text-neon transition-colors"
           >
-            Replay clip
+            {demoMode ? "Switch to live camera" : "Play demo clip"}
           </button>
-        )}
+          {demoMode && (demoStatus === "recognized" || demoStatus === "no-result") && (
+            <button
+              type="button"
+              onClick={() => startDemo()}
+              className="px-3 py-1.5 rounded-lg text-xs glass-panel border-neon/40 text-neutral-200 hover:text-neon transition-colors"
+            >
+              Replay clip
+            </button>
+          )}
+        </div>
       </div>
 
       <AnimatePresence>
