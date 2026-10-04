@@ -91,6 +91,10 @@ async def classify_clip(
         result = await loop.run_in_executor(_executor, _classify_clip_sync, body.frames)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    logger.info(
+        "diag classify-clip: label=%s confidence=%.3f n_frames=%d",
+        result["label"], result["confidence"], len(body.frames),
+    )
 
     nlp_result = await loop.run_in_executor(
         _executor,

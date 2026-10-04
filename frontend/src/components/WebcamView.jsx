@@ -33,6 +33,11 @@ const DEMO_CAPTURE_WIDTH = 480;
 // How long a "Record sign" capture runs — matches roughly the average
 // INCLUDE clip duration, long enough to complete one sign.
 const RECORD_DURATION_MS = 3000;
+// Below this, a "Record sign" result is flagged as uncertain rather than
+// shown as if it were reliable. Data-backed (see api/pose/service.py's
+// MIN_EMIT_CONFIDENCE comment): wrong guesses across the 262-class model
+// almost never exceed ~58% confidence, correct ones are usually 75%+.
+const LOW_CONFIDENCE_THRESHOLD = 0.5;
 
 // "Record sign": captures RECORD_DURATION_MS of the user's OWN live webcam,
 // then submits it to the same /pose/classify-clip whole-clip pipeline the
@@ -156,6 +161,7 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
   // live camera for RECORD_DURATION_MS instead of a pre-recorded file.
   const [recordStatus, setRecordStatus] = useState("idle");
   const [recordSecondsLeft, setRecordSecondsLeft] = useState(0);
+  const [recordConfidence, setRecordConfidence] = useState(null);
   const recordFramesRef = useRef([]);
 
   const startDemo = useCallback((clipId) => {
@@ -219,7 +225,17 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
       // demo mode while this POST was in flight).
       if (demoModeRef.current) return;
       onDemoResult?.(data);
-      setRecordStatus("recognized");
+      // Unlike the demo clips (always verified 84%+), a live recording can
+      // legitimately land on a near-guess — e.g. 17.8% confidence across
+      // 262 classes is barely above chance. classify-clip has no
+      // confidence gate (a single explicit attempt should always return
+      // *something*, unlike the continuous live stream), so the frontend
+      // has to flag low confidence itself instead of presenting a fully-
+      // formed sentence as if it were reliable. `data.low_confidence` is a
+      // different signal (NLP paraphrase word-overlap, not gesture
+      // confidence) so it's not usable here — check confidence directly.
+      setRecordConfidence(data.confidence);
+      setRecordStatus(data.confidence < LOW_CONFIDENCE_THRESHOLD ? "uncertain" : "recognized");
     } catch {
       if (!demoModeRef.current) setRecordStatus("no-result");
     }
@@ -229,6 +245,7 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
     recordFramesRef.current = [];
     setRecordStatus("recording");
     setRecordSecondsLeft(Math.ceil(RECORD_DURATION_MS / 1000));
+    setRecordConfidence(null);
   }, []);
 
   // Countdown display only — cosmetic, decoupled from the actual capture
@@ -380,7 +397,7 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
               ? "bg-red-500 animate-pulse"
               : recordStatus === "recognized"
               ? "bg-neon"
-              : recordStatus === "no-result"
+              : recordStatus === "uncertain" || recordStatus === "no-result"
               ? "bg-amber-400"
               : connected
               ? "bg-neon"
@@ -402,6 +419,8 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
             ? "Processing..."
             : recordStatus === "recognized"
             ? "Recognized"
+            : recordStatus === "uncertain"
+            ? `Uncertain (${Math.round((recordConfidence ?? 0) * 100)}%) — try again`
             : recordStatus === "no-result"
             ? "No result — try again"
             : connected
