@@ -88,26 +88,3 @@ class EmotionAnalyzer:
     def reset(self) -> None:
         self._frame_count = 0
         self._recent.clear()
-
-
-def fuse_gesture_and_emotion(gesture_label: str, emotion: str) -> str:
-    """
-    Simple fusion engine: combines a raw gesture token with the current
-    dominant emotion into a richer intent hint consumed by
-    nlp_correction.correct_sentence() as extra context.
-
-    Example: fuse_gesture_and_emotion("FOOD", "angry") -> "FOOD (FRUSTRATED)"
-    """
-    emotion_intent_map = {
-        "angry": "FRUSTRATED",
-        "sad": "UPSET",
-        "fear": "ANXIOUS",
-        "surprise": "SURPRISED",
-        "happy": "PLEASED",
-        "disgust": "DISPLEASED",
-        "neutral": None,
-    }
-    intent = emotion_intent_map.get(emotion)
-    if intent:
-        return f"{gesture_label} ({intent})"
-    return gesture_label

@@ -41,11 +41,20 @@ class GestureNotifier extends StateNotifier<GestureState> {
   TFLiteInferenceService? _offlineService;
   bool _offline = false;
 
+  // Cold start races the default `false` (fireImmediately) against the
+  // async SharedPreferences restore of the real persisted value — two
+  // overlapping _switchMode calls can otherwise interleave and leave the
+  // wrong service connected. Each call captures its own generation and
+  // bails if a newer call has since started, instead of letting whichever
+  // one *finishes* last win regardless of which was requested last.
+  int _switchGeneration = 0;
+
   GestureNotifier(this.ref) : super(const GestureState()) {
     ref.listen<bool>(offlineModeProvider, (previous, next) => _switchMode(next), fireImmediately: true);
   }
 
   Future<void> _switchMode(bool offline) async {
+    final generation = ++_switchGeneration;
     _offline = offline;
     _onlineService?.dispose();
     _onlineService = null;
@@ -53,19 +62,33 @@ class GestureNotifier extends StateNotifier<GestureState> {
     _offlineService = null;
 
     if (offline) {
-      _offlineService = TFLiteInferenceService();
-      await _offlineService!.initialize();
+      final service = TFLiteInferenceService();
+      await service.initialize();
+      if (generation != _switchGeneration) {
+        service.dispose();
+        return;
+      }
+      _offlineService = service;
       state = state.copyWith(connected: true);
     } else {
       final authController = ref.read(authControllerProvider);
-      _onlineService = GestureWebSocketService(getToken: authController.currentToken)..connect();
-      _onlineService!.labelStream.listen((event) {
+      final service = GestureWebSocketService(getToken: authController.currentToken);
+      service.connect();
+      if (generation != _switchGeneration) {
+        service.dispose();
+        return;
+      }
+      _onlineService = service;
+      service.labelStream.listen((event) {
+        if (generation != _switchGeneration) return;
         state = state.copyWith(latestLabel: event);
       });
-      _onlineService!.sentenceStream.listen((event) {
+      service.sentenceStream.listen((event) {
+        if (generation != _switchGeneration) return;
         state = state.copyWith(latestSentence: event);
       });
-      _onlineService!.connectionStream.listen((connected) {
+      service.connectionStream.listen((connected) {
+        if (generation != _switchGeneration) return;
         state = state.copyWith(connected: connected);
       });
     }

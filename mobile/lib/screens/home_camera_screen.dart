@@ -52,7 +52,13 @@ class _HomeCameraScreenState extends ConsumerState<HomeCameraScreen> {
 
     final controller = CameraController(front, ResolutionPreset.medium, enableAudio: false);
     await controller.initialize();
-    if (!mounted) return;
+    if (!mounted) {
+      // Screen was disposed while initialize() was pending — release the
+      // platform camera handle ourselves, since dispose() already ran and
+      // won't be called again to do it for us.
+      await controller.dispose();
+      return;
+    }
 
     controller.startImageStream(_onCameraImage);
     setState(() {
