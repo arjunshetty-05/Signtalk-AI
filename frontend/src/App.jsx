@@ -24,10 +24,13 @@ export default function App() {
   const [panelsOpen, setPanelsOpen] = useState(true);
 
   // Keep the displayed (possibly translated) sentence in sync with new events
+  const hasTranslation = displayedSentence?.sourceKey === latestSentence?.receivedAt;
   const activeSentenceEvent = latestSentence
-    ? { ...latestSentence, sentence: displayedSentence?.sourceKey === latestSentence.receivedAt
-        ? displayedSentence.sentence
-        : latestSentence.sentence }
+    ? {
+        ...latestSentence,
+        sentence: hasTranslation ? displayedSentence.sentence : latestSentence.sentence,
+        lang: hasTranslation ? displayedSentence.lang : "en",
+      }
     : null;
 
   const handleTranslated = (translatedText, lang) => {
