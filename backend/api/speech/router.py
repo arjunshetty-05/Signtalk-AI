@@ -57,7 +57,10 @@ async def text_to_speech(
     audio_bytes = await loop.run_in_executor(
         _executor, tts_module.synthesize_speech, body.text, body.lang, mode
     )
-    media_type = "audio/mpeg" if mode == "online" else "audio/wav"
+    # synthesize_speech silently falls back from gTTS to Coqui on network
+    # failure (see tts.py), so the actual format can differ from the
+    # requested mode — sniff the real bytes rather than trusting `mode`.
+    media_type = "audio/wav" if audio_bytes[:4] == b"RIFF" else "audio/mpeg"
     return Response(content=audio_bytes, media_type=media_type)
 
 

@@ -10,10 +10,13 @@ header-parsing logic anywhere else.
 
 from __future__ import annotations
 
-from fastapi import Request
+from fastapi import Request, WebSocket
 
 
-def get_offline_mode(request: Request) -> bool:
+def get_offline_mode(request: Request | WebSocket) -> bool:
+    """Works for both regular HTTP requests and WebSocket connections —
+    Starlette's Request and WebSocket expose the same .headers/.query_params
+    interface, so one implementation covers both."""
     header_value = request.headers.get("X-Offline-Mode", "").strip().lower()
     if header_value in ("true", "1", "yes"):
         return True

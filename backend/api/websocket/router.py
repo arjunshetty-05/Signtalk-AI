@@ -13,13 +13,16 @@ built against.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from api.auth.dependencies import CurrentUser
 from api.core.metrics import metrics
+from api.core.offline_mode import get_offline_mode
 from api.pose.service import GestureConnectionState
 from keypoint_utils import decode_base64_jpeg
 import emotion as emotion_module
@@ -28,6 +31,7 @@ import speech as speech_module
 
 logger = logging.getLogger("signtalk.websocket")
 router = APIRouter()
+_executor = ThreadPoolExecutor(max_workers=2)
 
 GESTURE_TOKENS_BEFORE_CORRECTION = 3
 
@@ -59,13 +63,15 @@ async def ws_gesture(websocket: WebSocket, token: str | None = Query(default=Non
     if user is None:
         return
 
+    offline_mode = get_offline_mode(websocket)
     metrics.connection_opened()
     state = GestureConnectionState(frame_skip=frame_skip)
     emotion_analyzer = emotion_module.EmotionAnalyzer()
     conversation_memory = nlp_correction.ConversationMemory()
     accumulated_tokens: list[str] = []
-    logger.info("User %s connected to /ws/gesture", user.uid)
+    logger.info("User %s connected to /ws/gesture (offline_mode=%s)", user.uid, offline_mode)
 
+    loop = asyncio.get_event_loop()
     try:
         while True:
             raw = await websocket.receive_text()
@@ -81,7 +87,7 @@ async def ws_gesture(websocket: WebSocket, token: str | None = Query(default=Non
                 await websocket.send_text(json.dumps({"error": str(exc)}))
                 continue
 
-            emotion_analyzer.maybe_process(frame_bgr)
+            await loop.run_in_executor(_executor, emotion_analyzer.maybe_process, frame_bgr)
             emission, latency_ms = state.process_frame(frame_bgr)
 
             if emission is not None:
@@ -98,8 +104,13 @@ async def ws_gesture(websocket: WebSocket, token: str | None = Query(default=Non
                 accumulated_tokens.append(emission["label"])
                 if len(accumulated_tokens) >= GESTURE_TOKENS_BEFORE_CORRECTION:
                     dominant_emotion = emotion_analyzer.dominant_emotion()
-                    result = nlp_correction.correct_sentence(
-                        accumulated_tokens, dominant_emotion, conversation_memory.get()
+                    result = await loop.run_in_executor(
+                        _executor,
+                        nlp_correction.correct_sentence,
+                        accumulated_tokens,
+                        dominant_emotion,
+                        conversation_memory.get(),
+                        offline_mode,  # offline_mode=True -> skip Gemini, go straight to Flan-T5-Small
                     )
                     conversation_memory.add(result["sentence"])
                     accumulated_tokens.clear()
