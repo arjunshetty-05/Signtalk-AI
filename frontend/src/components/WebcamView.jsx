@@ -9,6 +9,12 @@
 //
 // Also connects to /ws/speech and shows live partial/final transcripts in
 // a small separate overlay.
+//
+// Deliberately NOT using react-webcam's `mirrored` prop: it flips
+// getScreenshot()'s captured pixels too, not just the CSS preview — so
+// every frame sent to the classifier would be horizontally mirrored
+// relative to the INCLUDE training videos (recorded unmirrored), silently
+// hurting recognition on any directionally-asymmetric sign.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Webcam from "react-webcam";
@@ -96,7 +102,6 @@ export default function WebcamView({ latestLabel, connected, sendFrame }) {
       <Webcam
         ref={webcamRef}
         audio={false}
-        mirrored
         screenshotFormat="image/jpeg"
         className="w-full h-full object-cover"
       />
