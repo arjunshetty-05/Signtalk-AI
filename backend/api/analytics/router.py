@@ -11,6 +11,7 @@ intentionally FastAPI-free/dependency-free — this route is the HTTP layer
 around it).
 """
 
+import logging
 import os
 import sys
 
@@ -23,6 +24,8 @@ from api.core.config import settings
 from api.core.exceptions import ForbiddenError
 from api.core.limiter import limiter
 from api.core.metrics import metrics
+
+logger = logging.getLogger("signtalk.analytics")
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from dataset_tools.feedback_queue import record_correction  # noqa: E402
@@ -79,6 +82,7 @@ async def get_conversations(
 
         history = get_conversation_history(user_id, limit=limit)
     except Exception:
+        logger.exception("get_conversation_history failed for user %s — returning empty list", user_id)
         history = []
     return [ConversationEntry(**entry) for entry in history]
 
