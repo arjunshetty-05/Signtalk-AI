@@ -76,6 +76,17 @@ def synthesize_speech(text: str, lang: str, mode: str) -> bytes:
             logger.warning("Online TTS (gTTS) failed, falling back to offline Coqui: %s", exc)
             return _synthesize_offline(text, lang)
     elif mode == "offline":
-        return _synthesize_offline(text, lang)
+        try:
+            return _synthesize_offline(text, lang)
+        except Exception as exc:
+            # Coqui (the `TTS` package) is an optional dependency — see
+            # requirements-offline-tts.txt — deliberately not always
+            # installed. Genuinely offline environments without network
+            # will still fail here (nothing left to fall back to), but
+            # falling back to gTTS beats a hard 500 whenever a network path
+            # does exist, e.g. offline mode is being demoed rather than
+            # actually running with no internet.
+            logger.warning("Offline TTS (Coqui) failed, falling back to online gTTS: %s", exc)
+            return _synthesize_online(text, lang)
     else:
         raise ValueError(f"Unknown TTS mode: {mode!r} (expected 'online' or 'offline')")
