@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { useAuth } from "./context/AuthProvider.jsx";
 import { useGestureSocket } from "./hooks/useGestureSocket.js";
+import { useConversationSocket } from "./hooks/useConversationSocket.js";
 import LoginScreen from "./components/LoginScreen.jsx";
 import WebcamView from "./components/WebcamView.jsx";
 import SubtitleBar from "./components/SubtitleBar.jsx";
@@ -17,6 +18,7 @@ import AnalyticsPanel from "./components/AnalyticsPanel.jsx";
 export default function App() {
   const { user, token, loading, logout } = useAuth();
   const { latestLabel, latestSentence, connected, sendFrame } = useGestureSocket(token);
+  const { lastEventAt: lastConversationEventAt } = useConversationSocket(token);
 
   const [displayedSentence, setDisplayedSentence] = useState(null); // {sentence, source, low_confidence, receivedAt}
   const [panelsOpen, setPanelsOpen] = useState(true);
@@ -76,8 +78,8 @@ export default function App() {
 
       {panelsOpen && (
         <aside className="w-full md:w-80 flex flex-col gap-4">
-          <AnalyticsPanel latestLabel={latestLabel} />
-          <ConversationHistory />
+          <AnalyticsPanel latestLabel={latestLabel} lastConversationEventAt={lastConversationEventAt} />
+          <ConversationHistory lastConversationEventAt={lastConversationEventAt} />
         </aside>
       )}
 

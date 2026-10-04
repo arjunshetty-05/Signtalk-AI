@@ -57,9 +57,8 @@ class GestureNotifier extends StateNotifier<GestureState> {
       await _offlineService!.initialize();
       state = state.copyWith(connected: true);
     } else {
-      final token = await ref.read(authControllerProvider).currentToken();
-      if (token == null) return;
-      _onlineService = GestureWebSocketService(token: token)..connect();
+      final authController = ref.read(authControllerProvider);
+      _onlineService = GestureWebSocketService(getToken: authController.currentToken)..connect();
       _onlineService!.labelStream.listen((event) {
         state = state.copyWith(latestLabel: event);
       });

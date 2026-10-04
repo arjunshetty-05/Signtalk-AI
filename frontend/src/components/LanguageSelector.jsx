@@ -4,7 +4,7 @@
 // the currently displayed sentence and reports the translated text back up
 // so SubtitleBar re-renders in the selected language.
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "../context/AuthProvider.jsx";
 
 const LANGUAGES = [
@@ -18,31 +18,46 @@ export default function LanguageSelector({ currentText, onTranslated }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const handleChange = async (event) => {
-    const targetLang = event.target.value;
-    setLanguage(targetLang);
+  const translate = useCallback(async (text, targetLang) => {
     setError(null);
+    if (!text) return;
 
-    if (!currentText) return;
     if (targetLang === "en") {
-      onTranslated?.(currentText, targetLang);
+      onTranslated?.(text, targetLang);
       return;
     }
 
     setLoading(true);
     try {
       const { data } = await apiClient.post("/translate", {
-        text: currentText,
+        text,
         target_lang: targetLang,
         offline: false,
       });
       onTranslated?.(data.translated_text, targetLang);
     } catch (err) {
       setError("Translation failed — showing original text.");
-      onTranslated?.(currentText, targetLang);
+      onTranslated?.(text, targetLang);
     } finally {
       setLoading(false);
     }
+  }, [onTranslated]);
+
+  // Re-translate automatically whenever a new sentence arrives while a
+  // non-English language is selected. Translation used to only fire from
+  // the dropdown's onChange, so every sentence after the first one silently
+  // reverted to English.
+  useEffect(() => {
+    translate(currentText, language);
+    // Only re-run when the sentence itself changes — language changes are
+    // handled by handleChange below, to avoid a duplicate call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentText]);
+
+  const handleChange = (event) => {
+    const targetLang = event.target.value;
+    setLanguage(targetLang);
+    translate(currentText, targetLang);
   };
 
   return (

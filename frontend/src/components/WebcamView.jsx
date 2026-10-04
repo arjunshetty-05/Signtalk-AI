@@ -18,15 +18,24 @@ import { useAuth } from "../context/AuthProvider.jsx";
 
 const CAPTURE_FPS = 20;
 const LABEL_TIMEOUT_MS = 4000;
+const SPEECH_RECONNECT_DELAY_MS = 2000;
 
+// Mirrors useGestureSocket's reconnect pattern — without onclose/onerror
+// handling, once this socket closed for any reason (server restart, network
+// blip) the transcript overlay would silently stop updating for the rest of
+// the session.
 function useSpeechSocket(token) {
   const [transcript, setTranscript] = useState(null); // {text, is_final}
   const socketRef = useRef(null);
+  const reconnectTimerRef = useRef(null);
+  const shouldReconnectRef = useRef(true);
 
-  useEffect(() => {
-    if (!token) return undefined;
+  const connect = useCallback(() => {
+    if (!token) return;
+
     const socket = new WebSocket(`${WS_BASE_URL}/ws/speech?token=${encodeURIComponent(token)}`);
     socketRef.current = socket;
+
     socket.onmessage = (event) => {
       try {
         setTranscript(JSON.parse(event.data));
@@ -34,8 +43,25 @@ function useSpeechSocket(token) {
         /* ignore malformed frame */
       }
     };
-    return () => socket.close();
+
+    socket.onclose = () => {
+      if (shouldReconnectRef.current) {
+        reconnectTimerRef.current = setTimeout(connect, SPEECH_RECONNECT_DELAY_MS);
+      }
+    };
+
+    socket.onerror = () => socket.close();
   }, [token]);
+
+  useEffect(() => {
+    shouldReconnectRef.current = true;
+    connect();
+    return () => {
+      shouldReconnectRef.current = false;
+      clearTimeout(reconnectTimerRef.current);
+      socketRef.current?.close();
+    };
+  }, [connect]);
 
   return transcript;
 }

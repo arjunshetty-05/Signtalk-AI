@@ -6,7 +6,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import {
-  onAuthStateChanged,
+  onIdTokenChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
@@ -24,7 +24,11 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    // onIdTokenChanged (not onAuthStateChanged) fires on sign-in/out AND on
+    // Firebase's automatic hourly token refresh, so `token` state — and
+    // anything reconnecting off of it, like useGestureSocket — always has
+    // a live token instead of silently going stale after ~1 hour.
+    const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const idToken = await firebaseUser.getIdToken();
         setUser(firebaseUser);

@@ -10,13 +10,16 @@ header-parsing logic anywhere else.
 
 from __future__ import annotations
 
-from fastapi import Request, WebSocket
+from fastapi import Request
 
 
-def get_offline_mode(request: Request | WebSocket) -> bool:
-    """Works for both regular HTTP requests and WebSocket connections —
-    Starlette's Request and WebSocket expose the same .headers/.query_params
-    interface, so one implementation covers both."""
+def get_offline_mode(request: Request) -> bool:
+    """Type-hinted as Request for FastAPI's Depends() usage on REST routes
+    (a Request | WebSocket union here breaks FastAPI's dependency-injection
+    introspection with a FastAPIError at import time). The websocket router
+    calls this directly as a plain function, not via Depends — Starlette's
+    WebSocket exposes the same .headers/.query_params interface as Request,
+    so it works fine there at runtime despite the narrower type hint."""
     header_value = request.headers.get("X-Offline-Mode", "").strip().lower()
     if header_value in ("true", "1", "yes"):
         return True

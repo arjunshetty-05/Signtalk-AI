@@ -18,7 +18,12 @@ import 'api_service.dart';
 const _reconnectDelay = Duration(seconds: 2);
 
 class GestureWebSocketService {
-  final String token;
+  /// Fetches the current token fresh each call (Firebase's own
+  /// getIdToken() auto-refreshes if the cached one has expired) — a plain
+  /// `final String token` captured once at construction would go stale
+  /// after ~1 hour and every subsequent auto-reconnect would keep
+  /// presenting that same expired token forever.
+  final Future<String?> Function() getToken;
   final int frameSkip;
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
@@ -32,15 +37,19 @@ class GestureWebSocketService {
   Stream<CorrectedSentenceEvent> get sentenceStream => _sentenceController.stream;
   Stream<bool> get connectionStream => _connectionController.stream;
 
-  GestureWebSocketService({required this.token, this.frameSkip = 1});
+  GestureWebSocketService({required this.getToken, this.frameSkip = 1});
 
   String get _wsBaseUrl {
     final httpBase = ApiService.baseUrl;
     return httpBase.replaceFirst('http', 'ws');
   }
 
-  void connect() {
+  Future<void> connect() async {
     _shouldReconnect = true;
+    final token = await getToken();
+    if (token == null) return;
+    if (!_shouldReconnect) return; // dispose()d while awaiting the token
+
     final uri = Uri.parse('$_wsBaseUrl/ws/gesture?token=$token&frame_skip=$frameSkip');
     _channel = WebSocketChannel.connect(uri);
     _connectionController.add(true);

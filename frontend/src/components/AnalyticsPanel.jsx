@@ -16,7 +16,7 @@ import { useAuth } from "../context/AuthProvider.jsx";
 
 const MAX_CONFIDENCE_POINTS = 30;
 
-export default function AnalyticsPanel({ latestLabel }) {
+export default function AnalyticsPanel({ latestLabel, lastConversationEventAt }) {
   const { user } = useAuth();
   const [confidenceHistory, setConfidenceHistory] = useState([]);
   const [emotionCounts, setEmotionCounts] = useState({});
@@ -30,7 +30,9 @@ export default function AnalyticsPanel({ latestLabel }) {
     });
   }, [latestLabel?.timestamp]);
 
-  // Emotion distribution from conversation history
+  // Emotion distribution from conversation history — refetches on mount and
+  // whenever the Socket.IO "conversation:new" event fires, not just when a
+  // gesture label happens to update.
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
@@ -50,7 +52,7 @@ export default function AnalyticsPanel({ latestLabel }) {
     return () => {
       cancelled = true;
     };
-  }, [user, latestLabel?.timestamp]);
+  }, [user, lastConversationEventAt]);
 
   const emotionData = useMemo(
     () => Object.entries(emotionCounts).map(([emotion, count]) => ({ emotion, count })),

@@ -18,12 +18,15 @@ const EMOTION_COLORS = {
   disgust: "bg-green-500/20 text-green-300",
 };
 
-export default function ConversationHistory() {
+export default function ConversationHistory({ lastConversationEventAt }) {
   const { user } = useAuth();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Re-fetches on mount, and again whenever the Socket.IO "conversation:new"
+  // event fires (see useConversationSocket) — so a newly saved conversation
+  // shows up live instead of only after a manual page reload.
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
@@ -44,7 +47,7 @@ export default function ConversationHistory() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, lastConversationEventAt]);
 
   return (
     <div className="glass-panel rounded-2xl p-4 h-full overflow-y-auto">
