@@ -105,7 +105,7 @@ function useSpeechSocket(token) {
   return transcript;
 }
 
-export default function WebcamView({ latestLabel, connected, sendFrame, onDemoResult }) {
+export default function WebcamView({ latestLabel, connected, sendFrame, onDemoResult, onDemoReset }) {
   const { token } = useAuth();
   const webcamRef = useRef(null);
   const demoVideoRef = useRef(null);
@@ -114,6 +114,14 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
   const transcript = useSpeechSocket(token);
   const [labelVisible, setLabelVisible] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
+  // Mirrors demoMode for the async classify-clip response handler below —
+  // that handler is a stable useCallback closure, so it needs a ref (not
+  // the state value) to know whether the user is STILL in demo mode by the
+  // time the POST resolves, not whether they were when the request started.
+  const demoModeRef = useRef(false);
+  useEffect(() => {
+    demoModeRef.current = demoMode;
+  }, [demoMode]);
   // "playing" (clip running, collecting frames) -> "processing" (clip ended,
   // waiting on POST /pose/classify-clip) -> "recognized" or "no-result"
   // (request failed, or returned nothing usable). Distinct from the raw
@@ -136,7 +144,8 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
   const stopDemo = useCallback(() => {
     setDemoMode(false);
     setDemoStatus("idle");
-  }, []);
+    onDemoReset?.(); // clears any lingering demo label/sentence so it doesn't show over the live feed
+  }, [onDemoReset]);
 
   const handleDemoEnded = useCallback(async () => {
     setDemoStatus("processing");
@@ -147,10 +156,15 @@ export default function WebcamView({ latestLabel, connected, sendFrame, onDemoRe
     }
     try {
       const { data } = await apiClient.post("/pose/classify-clip", { frames });
+      // If the user switched back to live camera (or started a different
+      // clip) while this request was in flight, don't apply a now-stale
+      // result — checked via ref, not the `demoMode` closure value, since
+      // this callback doesn't get recreated when demoMode changes.
+      if (!demoModeRef.current) return;
       onDemoResult?.(data);
       setDemoStatus("recognized");
     } catch {
-      setDemoStatus("no-result");
+      if (demoModeRef.current) setDemoStatus("no-result");
     }
   }, [onDemoResult]);
 

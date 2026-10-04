@@ -121,6 +121,7 @@ export default function App() {
             connected={connected}
             sendFrame={sendFrame}
             onDemoResult={(result) => setDemoResult({ ...result, receivedAt: Date.now() })}
+            onDemoReset={() => setDemoResult(null)}
           />
         </div>
 
