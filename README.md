@@ -15,12 +15,15 @@ which concern, useful context even without separate owners.
   conversation history + analytics, text-to-speech, and an offline-mode
   toggle are all live and tested.
 - **Gesture classifier**: trained on INCLUDE (ISL), curated down to a
-  **40-word vocabulary** (`backend/runs/exp_top40/`) for **62.9% validation
-  accuracy** — the full 262-word model (`backend/runs/exp1/`) only reaches
-  6.5% given ~13-16 examples/class, so the 40-word one is what the live
-  server actually points at (see `backend/.env`). Live recognition quality
-  depends on two timing/orientation details that turned out to matter a lot
-  in practice — see "Known gotchas" below.
+  **40-word vocabulary** (`backend/runs/exp_top40_v2/`) for **64.6%
+  validation accuracy** (up from an earlier 62.9% run, `backend/runs/exp_top40/`,
+  via a `Dense(64)` bottleneck before the softmax head and lighter
+  regularization — see "Known gotchas" below) — the full 262-word model
+  (`backend/runs/exp1/`) only reaches 6.5% given ~13-16 examples/class, so
+  the 40-word one is what the live server actually points at (see
+  `backend/.env`). Live recognition quality depends on two timing/orientation
+  details that turned out to matter a lot in practice — see "Known gotchas"
+  below.
 - **Translation**: code is correct (fixed a bug where it called Google's
   ADC-authenticated client library instead of using the configured API key
   via the REST endpoint), but there's no real `GOOGLE_TRANSLATE_API_KEY`
@@ -54,6 +57,20 @@ which concern, useful context even without separate owners.
   to real sign duration. This is set in `useGestureSocket.js`'s WS URL.
   Live accuracy at this setting hadn't been re-validated by a full test
   pass as of the last session — worth confirming first thing next time.
+- **On-the-fly keypoint augmentation (rotation/scale/jitter/time-warp,
+  `train_bilstm.py --augment`) hurt validation accuracy on this dataset,
+  every magnitude tried.** Three configs (heavy: dropout 0.4/L2/label
+  smoothing → 56%; light: dropout 0.3, no L2/smoothing → 51%; very light,
+  no time-warp → 62%) all landed below the 64.6% no-augmentation run with
+  the same architecture. With only ~666 training sequences across 40
+  classes (~15-17/class) and a validation set drawn from clean,
+  un-augmented clips, augmenting the training distribution pulls it away
+  from what validation actually measures faster than it buys
+  generalization — the usual "augmentation helps small datasets" intuition
+  doesn't hold here without either far more epochs to compensate or a
+  larger dataset. The flags are still there (`--augment`,
+  `--aug_rotation_deg`, etc.) if per-class example counts grow enough to
+  revisit this, just don't reach for `--augment` by default.
 
 ## Project structure
 

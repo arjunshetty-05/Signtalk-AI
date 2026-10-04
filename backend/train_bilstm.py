@@ -1,3 +1,4 @@
+
 """
 train_bilstm.py — SignTalk AI / Person A (ML Core), Prompt A1
 
@@ -36,18 +37,41 @@ NUM_KEYPOINTS = 17
 COORD_DIM = 2
 FLAT_DIM = NUM_KEYPOINTS * COORD_DIM  # 34
 
-
+# Augmentation magnitudes — tuned for the shoulder-centered, scale-normalized
+# (17, 2) representation from keypoint_utils.normalize_keypoints(). No
+# left-right mirroring: the live pipeline deliberately never mirrors frames
+# (see README "Known gotchas"), and mirroring would also flip
+# handedness-dependent signs, so it's not a safe augmentation here.
 def parse_args():
     p = argparse.ArgumentParser(description="Train SignTalk AI BiLSTM gesture classifier")
     p.add_argument("--data_dir", required=True, help="Folder containing .npy keypoint sequences")
     p.add_argument("--labels_csv", required=True, help="CSV with filename,class,signer_id")
     p.add_argument("--output_dir", required=True, help="Where to write model/plots/logs")
-    p.add_argument("--epochs", type=int, default=100)
+    p.add_argument("--epochs", type=int, default=150)
     p.add_argument("--batch_size", type=int, default=32)
     p.add_argument("--val_signers", type=float, default=0.2,
                     help="Fraction of unique signers (by ID, sorted) held out for validation")
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--augment", dest="augment", action="store_true", default=False,
+                    help="Apply on-the-fly rotation/scale/jitter/time-warp augmentation to training data")
+    p.add_argument("--no_augment", dest="augment", action="store_false",
+                    help="Disable augmentation (default)")
+    # Augmentation magnitudes — tuned for the shoulder-centered, scale-normalized
+    # (17, 2) representation from keypoint_utils.normalize_keypoints(). No
+    # left-right mirroring flag: the live pipeline deliberately never mirrors
+    # frames (see README "Known gotchas"), and mirroring would also flip
+    # handedness-dependent signs, so it's not offered here.
+    p.add_argument("--aug_rotation_deg", type=float, default=15.0)
+    p.add_argument("--aug_scale_jitter", type=float, default=0.10)
+    p.add_argument("--aug_shift_jitter", type=float, default=0.05)
+    p.add_argument("--aug_noise_std", type=float, default=0.02)
+    p.add_argument("--aug_time_warp_frac", type=float, default=0.2,
+                    help="Resample to a random length in [1-frac, 1+frac] * 30, then back to 30. 0 disables.")
+    p.add_argument("--dropout", type=float, default=0.3)
+    p.add_argument("--l2", type=float, default=0.0, help="L2 weight regularization strength")
+    p.add_argument("--label_smoothing", type=float, default=0.0)
+    p.add_argument("--patience", type=int, default=20, help="Early-stopping patience (epochs)")
     return p.parse_args()
 
 
@@ -68,7 +92,7 @@ def load_dataset(data_dir: str, labels_csv: str):
         if arr.shape != (SEQUENCE_LENGTH, NUM_KEYPOINTS, COORD_DIM):
             print(f"[warn] unexpected shape {arr.shape} for {path}, skipping")
             continue
-        sequences.append(arr.reshape(SEQUENCE_LENGTH, FLAT_DIM))
+        sequences.append(arr)
         labels.append(str(row["class"]))
         signers.append(str(row["signer_id"]))
 
@@ -91,16 +115,72 @@ def split_by_signer(signer_ids: np.ndarray, val_fraction: float, seed: int):
     return train_mask, val_mask
 
 
-def build_model(num_classes: int, lr: float) -> tf.keras.Model:
+def augment_sequence(seq: tf.Tensor, rotation_deg: float, scale_jitter: float,
+                      shift_jitter: float, noise_std: float, time_warp_frac: float) -> tf.Tensor:
+    """
+    Random rotation + scale + translation + gaussian jitter + temporal
+    speed-warp on one (SEQUENCE_LENGTH, NUM_KEYPOINTS, COORD_DIM) sequence.
+    Applied per-example (not batched) so each sample in a batch gets an
+    independent random transform. Operates entirely in normalized
+    keypoint-coordinate space — no raw video/image involved.
+    """
+    theta = tf.random.uniform([], -rotation_deg, rotation_deg) * (np.pi / 180.0)
+    cos_t, sin_t = tf.cos(theta), tf.sin(theta)
+    rot = tf.stack([[cos_t, -sin_t], [sin_t, cos_t]])
+    flat_xy = tf.reshape(seq, [-1, COORD_DIM])
+    seq = tf.reshape(tf.matmul(flat_xy, rot, transpose_b=True), tf.shape(seq))
+
+    scale = tf.random.uniform([], 1.0 - scale_jitter, 1.0 + scale_jitter)
+    seq = seq * scale
+
+    shift = tf.random.uniform([COORD_DIM], -shift_jitter, shift_jitter)
+    seq = seq + shift
+
+    seq = seq + tf.random.normal(tf.shape(seq), stddev=noise_std)
+
+    if time_warp_frac > 0:
+        min_len = int(round(SEQUENCE_LENGTH * (1.0 - time_warp_frac)))
+        max_len = int(round(SEQUENCE_LENGTH * (1.0 + time_warp_frac)))
+        new_len = tf.random.uniform([], min_len, max_len + 1, dtype=tf.int32)
+        warped = tf.image.resize(tf.reshape(seq, [1, SEQUENCE_LENGTH, FLAT_DIM, 1]), [new_len, FLAT_DIM])
+        seq = tf.reshape(
+            tf.image.resize(warped, [SEQUENCE_LENGTH, FLAT_DIM]),
+            [SEQUENCE_LENGTH, NUM_KEYPOINTS, COORD_DIM],
+        )
+    return seq
+
+
+def make_dataset(X, y, num_classes, batch_size, training, augment, seed, aug_kwargs=None):
+    ds = tf.data.Dataset.from_tensor_slices((X, y))
+    if training:
+        ds = ds.shuffle(buffer_size=len(X), seed=seed, reshuffle_each_iteration=True)
+        if augment:
+            ds = ds.map(lambda seq, label: (augment_sequence(seq, **aug_kwargs), label),
+                        num_parallel_calls=tf.data.AUTOTUNE)
+    ds = ds.map(
+        lambda seq, label: (tf.reshape(seq, [SEQUENCE_LENGTH, FLAT_DIM]), tf.one_hot(label, num_classes)),
+        num_parallel_calls=tf.data.AUTOTUNE,
+    )
+    ds = ds.batch(batch_size)
+    return ds.prefetch(tf.data.AUTOTUNE)
+
+
+def build_model(num_classes: int, lr: float, dropout: float, l2_reg: float,
+                 label_smoothing: float) -> tf.keras.Model:
+    reg = tf.keras.regularizers.l2(l2_reg) if l2_reg > 0 else None
     model = tf.keras.Sequential([
         tf.keras.layers.Input(shape=(SEQUENCE_LENGTH, FLAT_DIM)),
-        tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128)),
-        tf.keras.layers.Dropout(0.3),
+        tf.keras.layers.Bidirectional(
+            tf.keras.layers.LSTM(128, kernel_regularizer=reg, recurrent_regularizer=reg)
+        ),
+        tf.keras.layers.Dropout(dropout),
+        tf.keras.layers.Dense(64, activation="relu", kernel_regularizer=reg),
+        tf.keras.layers.Dropout(dropout),
         tf.keras.layers.Dense(num_classes, activation="softmax"),
     ])
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
-        loss="sparse_categorical_crossentropy",
+        loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=label_smoothing),
         metrics=["accuracy"],
     )
     return model
@@ -154,25 +234,43 @@ def main():
     X_train, y_train = X[train_mask], y[train_mask]
     X_val, y_val = X[val_mask], y[val_mask]
     print(f"Train samples: {len(X_train)}, Val samples: {len(X_val)}, Classes: {len(class_names)}")
+    print(f"Augmentation: {'on' if args.augment else 'off'}, dropout={args.dropout}, "
+          f"l2={args.l2}, label_smoothing={args.label_smoothing}")
 
-    model = build_model(num_classes=len(class_names), lr=args.lr)
+    aug_kwargs = dict(
+        rotation_deg=args.aug_rotation_deg,
+        scale_jitter=args.aug_scale_jitter,
+        shift_jitter=args.aug_shift_jitter,
+        noise_std=args.aug_noise_std,
+        time_warp_frac=args.aug_time_warp_frac,
+    )
+    if args.augment:
+        print(f"Augmentation params: {aug_kwargs}")
+
+    num_classes = len(class_names)
+    train_ds = make_dataset(X_train, y_train, num_classes, args.batch_size,
+                             training=True, augment=args.augment, seed=args.seed, aug_kwargs=aug_kwargs)
+    val_ds = make_dataset(X_val, y_val, num_classes, args.batch_size,
+                           training=False, augment=False, seed=args.seed)
+
+    model = build_model(num_classes=num_classes, lr=args.lr, dropout=args.dropout,
+                         l2_reg=args.l2, label_smoothing=args.label_smoothing)
     model.summary()
 
     log_dir = os.path.join(args.output_dir, "logs", datetime.now().strftime("%Y%m%d-%H%M%S"))
     checkpoint_path = os.path.join(args.output_dir, "best_model.keras")
 
     callbacks = [
-        tf.keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=10, restore_best_weights=True),
+        tf.keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=args.patience, restore_best_weights=True),
         tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor="val_accuracy", save_best_only=True),
-        tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=5, min_lr=1e-6),
+        tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=7, min_lr=1e-6),
         tf.keras.callbacks.TensorBoard(log_dir=log_dir),
     ]
 
     history = model.fit(
-        X_train, y_train,
-        validation_data=(X_val, y_val),
+        train_ds,
+        validation_data=val_ds,
         epochs=args.epochs,
-        batch_size=args.batch_size,
         callbacks=callbacks,
         verbose=2,
     )
@@ -180,7 +278,8 @@ def main():
     # Reload best checkpoint before exporting/evaluating
     model = tf.keras.models.load_model(checkpoint_path)
 
-    val_pred_probs = model.predict(X_val)
+    X_val_flat = X_val.reshape(len(X_val), SEQUENCE_LENGTH, FLAT_DIM)
+    val_pred_probs = model.predict(X_val_flat)
     val_pred = np.argmax(val_pred_probs, axis=1)
     final_val_acc = float(np.mean(val_pred == y_val))
     print(f"Final validation accuracy: {final_val_acc:.4f}")
