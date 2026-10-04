@@ -91,11 +91,21 @@ def _call_google_translate(text: str, target_lang: str) -> str:
         logger.warning("GOOGLE_TRANSLATE_API_KEY not set — returning original text unchanged.")
         return text
     try:
-        from google.cloud import translate_v2 as translate
+        # google.cloud.translate_v2.Client() authenticates via Application
+        # Default Credentials (a service account / gcloud login) and never
+        # actually uses an API key — that's a different auth mechanism than
+        # what GOOGLE_TRANSLATE_API_KEY implies. The v2 REST endpoint is what
+        # actually accepts a plain API key, so call that directly instead.
+        import requests
 
-        client = translate.Client()
-        result = client.translate(text, target_language=target_lang)
-        return result["translatedText"]
+        response = requests.post(
+            "https://translation.googleapis.com/language/translate/v2",
+            params={"key": api_key},
+            json={"q": text, "target": target_lang, "format": "text"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        return response.json()["data"]["translations"][0]["translatedText"]
     except Exception as exc:
         logger.error("Google Translate API call failed: %s", exc)
         return text
