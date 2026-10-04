@@ -30,7 +30,14 @@ export function useGestureSocket(token, offline = false) {
   const connect = useCallback(() => {
     if (!token) return;
 
-    const url = `${WS_BASE_URL}/ws/gesture?token=${encodeURIComponent(token)}${offline ? "&offline=true" : ""}`;
+    // frame_skip=2: the 30-frame sequence buffer needs to span roughly as
+    // long as a real sign takes (INCLUDE training clips average ~2.9s), not
+    // whatever a raw 1-frame-skip buffer happens to cover. At the frontend's
+    // ~20fps capture rate, skipping every other frame makes 30 buffered
+    // frames span ~3s instead of ~1.5s — much closer to actual sign
+    // duration, since training data is each full clip resampled to 30
+    // frames, not a fixed-duration sliding window.
+    const url = `${WS_BASE_URL}/ws/gesture?token=${encodeURIComponent(token)}&frame_skip=2${offline ? "&offline=true" : ""}`;
     const socket = new WebSocket(url);
     socketRef.current = socket;
 
