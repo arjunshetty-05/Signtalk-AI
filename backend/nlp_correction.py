@@ -54,6 +54,25 @@ def _build_prompt(gesture_tokens: list[str], emotion: str, conversation_history:
     )
 
 
+def _build_flan_t5_prompt(gesture_tokens: list[str]) -> str:
+    """Flan-T5-Small (80M params) can't reliably follow the multi-part
+    Gemini prompt above (persona + emotion context + history + format
+    rules) — small T5-family models tend to latch onto and echo fragments
+    of compound instructions instead of performing the task. A plain
+    single-instruction prompt fixes that but just echoes the tokens back
+    verbatim instead of rewriting them. Few-shot examples get it to
+    actually generate grammatical sentences — semantic faithfulness to the
+    raw tokens is still inconsistent (this is a genuine fallback for an
+    unavailable Gemini call, not a fine-tuned model), but it no longer
+    produces garbled/off-task output."""
+    tokens_str = " ".join(gesture_tokens)
+    return (
+        "Sign words: I GO SCHOOL\nSentence: I am going to school.\n\n"
+        "Sign words: YOU HUNGRY\nSentence: Are you hungry?\n\n"
+        f"Sign words: {tokens_str}\nSentence:"
+    )
+
+
 def _call_gemini(prompt: str) -> str | None:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -128,12 +147,10 @@ def correct_sentence(
     if not tokens:
         return {"sentence": "", "source": "flan-t5", "low_confidence": True}
 
-    prompt = _build_prompt(tokens, emotion, conversation_history)
-
-    sentence = None if force_offline else _call_gemini(prompt)
+    sentence = None if force_offline else _call_gemini(_build_prompt(tokens, emotion, conversation_history))
     source = "gemini"
     if sentence is None:
-        sentence = _call_flan_t5(prompt)
+        sentence = _call_flan_t5(_build_flan_t5_prompt(tokens))
         source = "flan-t5"
 
     if not sentence:
