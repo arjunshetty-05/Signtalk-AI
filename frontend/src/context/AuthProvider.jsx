@@ -18,6 +18,12 @@ const AuthContext = createContext(null);
 
 export const apiClient = axios.create({ baseURL: API_BASE_URL });
 
+// Plain mutable ref (not React state) so the axios interceptor below —
+// which runs outside the component tree — always reads the current value
+// without needing full context plumbing. App.jsx's offline toggle writes to
+// this directly alongside its own useState (for re-rendering the UI).
+export const offlineModeRef = { current: false };
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
@@ -48,6 +54,7 @@ export function AuthProvider({ children }) {
         const freshToken = await auth.currentUser.getIdToken();
         config.headers.Authorization = `Bearer ${freshToken}`;
       }
+      config.headers["X-Offline-Mode"] = offlineModeRef.current ? "true" : "false";
       return config;
     });
     return () => apiClient.interceptors.request.eject(interceptorId);

@@ -18,7 +18,7 @@ import { WS_BASE_URL } from "../firebase.js";
 
 const RECONNECT_DELAY_MS = 2000;
 
-export function useGestureSocket(token) {
+export function useGestureSocket(token, offline = false) {
   const [latestLabel, setLatestLabel] = useState(null); // {label, confidence, timestamp, receivedAt}
   const [latestSentence, setLatestSentence] = useState(null); // {sentence, source, low_confidence, receivedAt}
   const [connected, setConnected] = useState(false);
@@ -30,7 +30,7 @@ export function useGestureSocket(token) {
   const connect = useCallback(() => {
     if (!token) return;
 
-    const url = `${WS_BASE_URL}/ws/gesture?token=${encodeURIComponent(token)}`;
+    const url = `${WS_BASE_URL}/ws/gesture?token=${encodeURIComponent(token)}${offline ? "&offline=true" : ""}`;
     const socket = new WebSocket(url);
     socketRef.current = socket;
 
@@ -60,7 +60,7 @@ export function useGestureSocket(token) {
     };
 
     socket.onerror = () => socket.close();
-  }, [token]);
+  }, [token, offline]);
 
   useEffect(() => {
     shouldReconnectRef.current = true;
