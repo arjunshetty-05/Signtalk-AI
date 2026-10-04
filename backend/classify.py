@@ -24,10 +24,23 @@ NUM_KEYPOINTS = 17
 
 _MODEL_PATH_ENV = "SIGNTALK_BILSTM_SAVEDMODEL"
 _LABELS_PATH_ENV = "SIGNTALK_LABELS_JSON"
+_USE_VELOCITY_ENV = "SIGNTALK_USE_VELOCITY_FEATURES"
 
 _model = None
 _labels: dict[str, str] | None = None
 _input_name: str | None = None
+
+
+def add_velocity_features(sequence: np.ndarray) -> np.ndarray:
+    """(30, 17, 2) position-only -> (30, 17, 4) [x, y, dx, dy], appending
+    frame-to-frame velocity so the model gets motion, not just position —
+    the only feature the wrist-tracking pose pipeline provides otherwise.
+    First frame's velocity is zero (no prior frame to diff against).
+    Shared with train_bilstm.py (imported, not reimplemented) so training
+    and inference can never compute this differently."""
+    velocity = np.diff(sequence, axis=0)
+    velocity = np.concatenate([np.zeros_like(sequence[:1]), velocity], axis=0)
+    return np.concatenate([sequence, velocity], axis=-1)
 
 
 def _try_load_trained_model():
@@ -93,7 +106,11 @@ def classify_sequence(sequence: np.ndarray) -> dict:
 
     import tensorflow as tf
 
-    flat = sequence.reshape(1, SEQUENCE_LENGTH, NUM_KEYPOINTS * 2).astype(np.float32)
+    features = sequence
+    if os.environ.get(_USE_VELOCITY_ENV, "false").lower() == "true":
+        features = add_velocity_features(sequence)
+    num_features = features.shape[-1]
+    flat = features.reshape(1, SEQUENCE_LENGTH, NUM_KEYPOINTS * num_features).astype(np.float32)
     output = _model(**{_input_name: tf.constant(flat)})
     probs = list(output.values())[0].numpy()[0] if isinstance(output, dict) else output.numpy()[0]
     class_idx = int(np.argmax(probs))

@@ -32,6 +32,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+from classify import add_velocity_features  # shared with inference — see classify.py
+
 SEQUENCE_LENGTH = 30
 NUM_KEYPOINTS = 17
 COORD_DIM = 2
@@ -76,6 +78,12 @@ def parse_args():
                     help="signer: hold out by signer_id (correct only with real signer metadata). "
                          "stratified: per-class random split, every class represented in val — use "
                          "this when signer_id is a per_video/per_session placeholder, not real identity.")
+    p.add_argument("--use_velocity", action="store_true", default=False,
+                    help="Append frame-to-frame velocity (dx, dy per keypoint) to the raw (x, y) "
+                         "position features, giving the model motion instead of position alone — "
+                         "the pose pipeline otherwise only provides wrist position per frame. "
+                         "Sets SIGNTALK_USE_VELOCITY_FEATURES=true on the deployed model's env to "
+                         "match at inference (see classify.py's add_velocity_features).")
     return p.parse_args()
 
 
@@ -182,15 +190,28 @@ def augment_sequence(seq: tf.Tensor, rotation_deg: float, scale_jitter: float,
     return seq
 
 
-def make_dataset(X, y, num_classes, batch_size, training, augment, seed, aug_kwargs=None):
+def _add_velocity_tf(seq):
+    """TF-graph equivalent of classify.add_velocity_features(), for use
+    inside a tf.data pipeline (after augmentation, which expects raw
+    (17, 2) position tensors — velocity is computed on the possibly-
+    augmented sequence, matching what a live augmented-then-classified
+    sequence would look like)."""
+    velocity = seq[1:] - seq[:-1]
+    velocity = tf.concat([tf.zeros_like(seq[:1]), velocity], axis=0)
+    return tf.concat([seq, velocity], axis=-1)
+
+
+def make_dataset(X, y, num_classes, batch_size, training, augment, seed, use_velocity, flat_dim, aug_kwargs=None):
     ds = tf.data.Dataset.from_tensor_slices((X, y))
     if training:
         ds = ds.shuffle(buffer_size=len(X), seed=seed, reshuffle_each_iteration=True)
         if augment:
             ds = ds.map(lambda seq, label: (augment_sequence(seq, **aug_kwargs), label),
                         num_parallel_calls=tf.data.AUTOTUNE)
+    if use_velocity:
+        ds = ds.map(lambda seq, label: (_add_velocity_tf(seq), label), num_parallel_calls=tf.data.AUTOTUNE)
     ds = ds.map(
-        lambda seq, label: (tf.reshape(seq, [SEQUENCE_LENGTH, FLAT_DIM]), tf.one_hot(label, num_classes)),
+        lambda seq, label: (tf.reshape(seq, [SEQUENCE_LENGTH, flat_dim]), tf.one_hot(label, num_classes)),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
     ds = ds.batch(batch_size)
@@ -198,10 +219,10 @@ def make_dataset(X, y, num_classes, batch_size, training, augment, seed, aug_kwa
 
 
 def build_model(num_classes: int, lr: float, dropout: float, l2_reg: float,
-                 label_smoothing: float) -> tf.keras.Model:
+                 label_smoothing: float, flat_dim: int) -> tf.keras.Model:
     reg = tf.keras.regularizers.l2(l2_reg) if l2_reg > 0 else None
     model = tf.keras.Sequential([
-        tf.keras.layers.Input(shape=(SEQUENCE_LENGTH, FLAT_DIM)),
+        tf.keras.layers.Input(shape=(SEQUENCE_LENGTH, flat_dim)),
         tf.keras.layers.Bidirectional(
             tf.keras.layers.LSTM(128, kernel_regularizer=reg, recurrent_regularizer=reg)
         ),
@@ -270,7 +291,7 @@ def main():
     X_val, y_val = X[val_mask], y[val_mask]
     print(f"Train samples: {len(X_train)}, Val samples: {len(X_val)}, Classes: {len(class_names)}")
     print(f"Augmentation: {'on' if args.augment else 'off'}, dropout={args.dropout}, "
-          f"l2={args.l2}, label_smoothing={args.label_smoothing}")
+          f"l2={args.l2}, label_smoothing={args.label_smoothing}, use_velocity={args.use_velocity}")
 
     aug_kwargs = dict(
         rotation_deg=args.aug_rotation_deg,
@@ -282,14 +303,17 @@ def main():
     if args.augment:
         print(f"Augmentation params: {aug_kwargs}")
 
+    flat_dim = FLAT_DIM * 2 if args.use_velocity else FLAT_DIM
     num_classes = len(class_names)
     train_ds = make_dataset(X_train, y_train, num_classes, args.batch_size,
-                             training=True, augment=args.augment, seed=args.seed, aug_kwargs=aug_kwargs)
+                             training=True, augment=args.augment, seed=args.seed,
+                             use_velocity=args.use_velocity, flat_dim=flat_dim, aug_kwargs=aug_kwargs)
     val_ds = make_dataset(X_val, y_val, num_classes, args.batch_size,
-                           training=False, augment=False, seed=args.seed)
+                           training=False, augment=False, seed=args.seed,
+                           use_velocity=args.use_velocity, flat_dim=flat_dim)
 
     model = build_model(num_classes=num_classes, lr=args.lr, dropout=args.dropout,
-                         l2_reg=args.l2, label_smoothing=args.label_smoothing)
+                         l2_reg=args.l2, label_smoothing=args.label_smoothing, flat_dim=flat_dim)
     model.summary()
 
     log_dir = os.path.join(args.output_dir, "logs", datetime.now().strftime("%Y%m%d-%H%M%S"))
@@ -313,7 +337,8 @@ def main():
     # Reload best checkpoint before exporting/evaluating
     model = tf.keras.models.load_model(checkpoint_path)
 
-    X_val_flat = X_val.reshape(len(X_val), SEQUENCE_LENGTH, FLAT_DIM)
+    X_val_for_eval = np.stack([add_velocity_features(s) for s in X_val]) if args.use_velocity else X_val
+    X_val_flat = X_val_for_eval.reshape(len(X_val), SEQUENCE_LENGTH, flat_dim)
     val_pred_probs = model.predict(X_val_flat)
     val_pred = np.argmax(val_pred_probs, axis=1)
     final_val_acc = float(np.mean(val_pred == y_val))
