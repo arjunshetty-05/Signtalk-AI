@@ -20,11 +20,33 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Webcam from "react-webcam";
 import { motion, AnimatePresence } from "framer-motion";
 import { WS_BASE_URL } from "../firebase.js";
-import { useAuth } from "../context/AuthProvider.jsx";
+import { apiClient, useAuth } from "../context/AuthProvider.jsx";
 
 const CAPTURE_FPS = 20;
 const LABEL_TIMEOUT_MS = 4000;
 const SPEECH_RECONNECT_DELAY_MS = 2000;
+// Downscaled capture width for demo-clip frames sent to /pose/classify-clip
+// — MoveNet resizes to its own fixed input size regardless, so sending the
+// clip at full 1920x1080 just inflates the request payload and per-frame
+// inference time for no accuracy gain.
+const DEMO_CAPTURE_WIDTH = 480;
+
+// Fallback demo path: replays a known-good INCLUDE clip (real recorded sign,
+// already verified to classify correctly) instead of the live webcam, so a
+// demo doesn't depend on live camera/lighting/signing conditions.
+//
+// Frames are NOT streamed through the live /ws/gesture pipeline. That
+// pipeline runs a continuously-sliding 30-frame trailing window, built for
+// open-ended live input — for a short ~3s clip, the window sees partial/
+// transitional motion before it ever holds the complete gesture, which
+// produced a flapping sequence of wrong labels in testing (confirmed: the
+// same clip that classifies correctly offline gave "tall", "warm", "old" in
+// quick succession over /ws/gesture). Instead, every frame of the clip is
+// collected client-side and POSTed as one batch to /pose/classify-clip,
+// which mirrors the *training* preprocessing — extract every frame, smooth,
+// then uniformly resample the whole clip to 30 frames — so it reproduces
+// the accuracy verified offline instead of the live streaming approximation.
+const DEMO_CLIP_SRC = "/demo/summer.mov";
 
 // Mirrors useGestureSocket's reconnect pattern — without onclose/onerror
 // handling, once this socket closed for any reason (server restart, network
@@ -72,20 +94,109 @@ function useSpeechSocket(token) {
   return transcript;
 }
 
-export default function WebcamView({ latestLabel, connected, sendFrame }) {
+export default function WebcamView({ latestLabel, connected, sendFrame, onDemoResult }) {
   const { token } = useAuth();
   const webcamRef = useRef(null);
+  const demoVideoRef = useRef(null);
+  const demoCanvasRef = useRef(null);
+  const demoFramesRef = useRef([]); // collected base64 JPEGs for the current playthrough
   const transcript = useSpeechSocket(token);
   const [labelVisible, setLabelVisible] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
+  // "playing" (clip running, collecting frames) -> "processing" (clip ended,
+  // waiting on POST /pose/classify-clip) -> "recognized" or "no-result"
+  // (request failed, or returned nothing usable). Distinct from the raw
+  // <video> playback state so the UI can say something concrete ("Analyzing
+  // sign...") instead of just replaying silently — a bare looping clip with
+  // no feedback reads as "nothing is happening" to someone watching a demo.
+  const [demoStatus, setDemoStatus] = useState("idle");
+  const [replayTick, setReplayTick] = useState(0);
 
-  // Stream frames at ~CAPTURE_FPS
+  const startDemo = useCallback(() => {
+    setDemoMode(true);
+    setDemoStatus("playing");
+    demoFramesRef.current = [];
+    setReplayTick((t) => t + 1); // forces the <video> to remount and play from frame 0
+  }, []);
+
+  const stopDemo = useCallback(() => {
+    setDemoMode(false);
+    setDemoStatus("idle");
+  }, []);
+
+  const handleDemoEnded = useCallback(async () => {
+    setDemoStatus("processing");
+    const frames = demoFramesRef.current;
+    if (frames.length < 2) {
+      setDemoStatus("no-result");
+      return;
+    }
+    try {
+      const { data } = await apiClient.post("/pose/classify-clip", { frames });
+      onDemoResult?.(data);
+      setDemoStatus("recognized");
+    } catch {
+      setDemoStatus("no-result");
+    }
+  }, [onDemoResult]);
+
+  // Stream frames at ~CAPTURE_FPS from the live webcam. (Demo-clip capture
+  // is handled by a separate effect below.)
   useEffect(() => {
+    if (demoMode) return undefined;
     const interval = setInterval(() => {
       const screenshot = webcamRef.current?.getScreenshot();
       if (screenshot) sendFrame(screenshot);
     }, 1000 / CAPTURE_FPS);
     return () => clearInterval(interval);
-  }, [sendFrame]);
+  }, [sendFrame, demoMode]);
+
+  // Demo-clip capture: collect every rendered frame into demoFramesRef,
+  // driven by requestVideoFrameCallback rather than a setInterval timer —
+  // a fixed-interval timer starts sampling immediately on play(), but
+  // browsers have a brief decode/startup delay before the video actually
+  // begins advancing, so the first several "frames" on a timer are often
+  // near-duplicates of frame 0. requestVideoFrameCallback only fires once
+  // per actually-rendered frame, so every captured frame is a genuine,
+  // unique step through the clip. Frames are collected here and sent as one
+  // batch on `onEnded` (see handleDemoEnded), not streamed live — see the
+  // comment on DEMO_CLIP_SRC above for why.
+  useEffect(() => {
+    if (!demoMode || demoStatus !== "playing") return undefined;
+    const video = demoVideoRef.current;
+    const canvas = demoCanvasRef.current;
+    if (!video || !canvas || typeof video.requestVideoFrameCallback !== "function") {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let handle;
+    let frameIndex = 0;
+    const onFrame = () => {
+      if (cancelled) return;
+      frameIndex += 1;
+      // Every other rendered frame is plenty — the server resamples the
+      // whole collected sequence down to 30 frames anyway (see
+      // /pose/classify-clip), so extra density here only adds MoveNet
+      // inference time per frame without adding accuracy. Keeps the
+      // "Processing..." wait short.
+      if (frameIndex % 2 === 0) {
+        const scale = DEMO_CAPTURE_WIDTH / video.videoWidth;
+        canvas.width = DEMO_CAPTURE_WIDTH;
+        canvas.height = Math.round(video.videoHeight * scale);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        demoFramesRef.current.push(canvas.toDataURL("image/jpeg", 0.8));
+      }
+      handle = video.requestVideoFrameCallback(onFrame);
+    };
+    handle = video.requestVideoFrameCallback(onFrame);
+
+    return () => {
+      cancelled = true;
+      if (handle) video.cancelVideoFrameCallback(handle);
+    };
+  }, [demoMode, demoStatus]);
 
   // Show label on new event, then fade after a timeout (not per-frame)
   useEffect(() => {
@@ -99,16 +210,74 @@ export default function WebcamView({ latestLabel, connected, sendFrame }) {
 
   return (
     <div className="relative w-full h-full rounded-2xl overflow-hidden glass-panel">
-      <Webcam
-        ref={webcamRef}
-        audio={false}
-        screenshotFormat="image/jpeg"
-        className="w-full h-full object-cover"
-      />
+      {demoMode ? (
+        <video
+          key={replayTick}
+          ref={demoVideoRef}
+          src={DEMO_CLIP_SRC}
+          className="w-full h-full object-cover"
+          autoPlay
+          muted
+          playsInline
+          onEnded={handleDemoEnded}
+        />
+      ) : (
+        <Webcam
+          ref={webcamRef}
+          audio={false}
+          screenshotFormat="image/jpeg"
+          className="w-full h-full object-cover"
+        />
+      )}
+      {/* Offscreen capture surface for demo-clip frames — never rendered visibly. */}
+      <canvas ref={demoCanvasRef} className="hidden" />
 
       <div className="absolute top-4 left-4 flex items-center gap-2 text-xs">
-        <span className={`w-2 h-2 rounded-full ${connected ? "bg-neon" : "bg-red-500"}`} />
-        <span className="text-neutral-300">{connected ? "Live" : "Reconnecting..."}</span>
+        <span
+          className={`w-2 h-2 rounded-full ${
+            demoMode
+              ? demoStatus === "recognized"
+                ? "bg-neon"
+                : demoStatus === "no-result"
+                ? "bg-amber-400"
+                : "bg-neon animate-pulse"
+              : connected
+              ? "bg-neon"
+              : "bg-red-500"
+          }`}
+        />
+        <span className="text-neutral-300">
+          {demoMode
+            ? demoStatus === "playing"
+              ? "Analyzing sign..."
+              : demoStatus === "processing"
+              ? "Processing..."
+              : demoStatus === "recognized"
+              ? "Recognized"
+              : "No result — try replay"
+            : connected
+            ? "Live"
+            : "Reconnecting..."}
+        </span>
+      </div>
+
+      <div className="absolute bottom-4 left-4 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={demoMode ? stopDemo : startDemo}
+          className="px-3 py-1.5 rounded-lg text-xs glass-panel border-neon/40 text-neutral-200 hover:text-neon transition-colors"
+        >
+          {demoMode ? "Switch to live camera" : "Play demo clip"}
+        </button>
+        {demoMode && (demoStatus === "recognized" || demoStatus === "no-result") && (
+          <button
+            type="button"
+            onClick={startDemo}
+            className="px-3 py-1.5 rounded-lg text-xs glass-panel border-neon/40 text-neutral-200 hover:text-neon transition-colors"
+          >
+            Replay clip
+          </button>
+        )}
       </div>
 
       <AnimatePresence>

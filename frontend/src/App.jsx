@@ -24,6 +24,22 @@ export default function App() {
 
   const [displayedSentence, setDisplayedSentence] = useState(null); // {sentence, source, low_confidence, receivedAt}
   const [panelsOpen, setPanelsOpen] = useState(true);
+  // Result from the "Play demo clip" batch classification (POST
+  // /pose/classify-clip) — a separate path from the live /ws/gesture
+  // stream (see WebcamView.jsx for why), so it's merged in here by
+  // whichever event is most recent rather than replacing latestLabel/
+  // latestSentence outright.
+  const [demoResult, setDemoResult] = useState(null); // {label, confidence, sentence, source, low_confidence, receivedAt}
+
+  const effectiveLabel =
+    demoResult && (!latestLabel || demoResult.receivedAt > latestLabel.receivedAt)
+      ? { label: demoResult.label, confidence: demoResult.confidence, timestamp: demoResult.receivedAt, receivedAt: demoResult.receivedAt }
+      : latestLabel;
+
+  const effectiveSentence =
+    demoResult && (!latestSentence || demoResult.receivedAt > latestSentence.receivedAt)
+      ? { sentence: demoResult.sentence, source: demoResult.source, low_confidence: demoResult.low_confidence, receivedAt: demoResult.receivedAt }
+      : latestSentence;
 
   const toggleOfflineMode = () => {
     const next = !offlineMode;
@@ -32,19 +48,19 @@ export default function App() {
   };
 
   // Keep the displayed (possibly translated) sentence in sync with new events
-  const hasTranslation = displayedSentence?.sourceKey === latestSentence?.receivedAt;
-  const activeSentenceEvent = latestSentence
+  const hasTranslation = displayedSentence?.sourceKey === effectiveSentence?.receivedAt;
+  const activeSentenceEvent = effectiveSentence
     ? {
-        ...latestSentence,
-        sentence: hasTranslation ? displayedSentence.sentence : latestSentence.sentence,
+        ...effectiveSentence,
+        sentence: hasTranslation ? displayedSentence.sentence : effectiveSentence.sentence,
         lang: hasTranslation ? displayedSentence.lang : "en",
       }
     : null;
 
   const handleTranslated = (translatedText, lang) => {
-    if (!latestSentence) return;
+    if (!effectiveSentence) return;
     setDisplayedSentence({
-      sourceKey: latestSentence.receivedAt,
+      sourceKey: effectiveSentence.receivedAt,
       sentence: translatedText,
       lang,
     });
@@ -92,7 +108,7 @@ export default function App() {
             >
               {offlineMode ? "✈️ Offline mode" : "Offline mode"}
             </button>
-            <LanguageSelector currentText={latestSentence?.sentence} onTranslated={handleTranslated} />
+            <LanguageSelector currentText={effectiveSentence?.sentence} onTranslated={handleTranslated} />
             <button onClick={logout} className="text-xs text-neutral-400 hover:text-neutral-200">
               Log out
             </button>
@@ -100,17 +116,22 @@ export default function App() {
         </div>
 
         <div className="flex-1 relative min-h-0">
-          <WebcamView latestLabel={latestLabel} connected={connected} sendFrame={sendFrame} />
+          <WebcamView
+            latestLabel={effectiveLabel}
+            connected={connected}
+            sendFrame={sendFrame}
+            onDemoResult={(result) => setDemoResult({ ...result, receivedAt: Date.now() })}
+          />
         </div>
 
         <div className="md:hidden">
-          <LanguageSelector currentText={latestSentence?.sentence} onTranslated={handleTranslated} />
+          <LanguageSelector currentText={effectiveSentence?.sentence} onTranslated={handleTranslated} />
         </div>
       </main>
 
       {panelsOpen && (
         <aside className="w-full md:w-80 flex flex-col gap-4 min-h-0 overflow-y-auto">
-          <AnalyticsPanel latestLabel={latestLabel} lastConversationEventAt={lastConversationEventAt} />
+          <AnalyticsPanel latestLabel={effectiveLabel} lastConversationEventAt={lastConversationEventAt} />
           <ConversationHistory lastConversationEventAt={lastConversationEventAt} />
         </aside>
       )}
