@@ -72,6 +72,10 @@ def parse_args():
     p.add_argument("--l2", type=float, default=0.0, help="L2 weight regularization strength")
     p.add_argument("--label_smoothing", type=float, default=0.0)
     p.add_argument("--patience", type=int, default=20, help="Early-stopping patience (epochs)")
+    p.add_argument("--split_mode", choices=["signer", "stratified"], default="signer",
+                    help="signer: hold out by signer_id (correct only with real signer metadata). "
+                         "stratified: per-class random split, every class represented in val — use "
+                         "this when signer_id is a per_video/per_session placeholder, not real identity.")
     return p.parse_args()
 
 
@@ -112,6 +116,34 @@ def split_by_signer(signer_ids: np.ndarray, val_fraction: float, seed: int):
     val_mask = np.array([s in val_signers for s in signer_ids])
     train_mask = ~val_mask
     print(f"Signers: {len(unique_signers)} total, {n_val} held out for validation: {sorted(val_signers)}")
+    return train_mask, val_mask
+
+
+def split_stratified(y: np.ndarray, val_fraction: float, seed: int):
+    """
+    Per-class random split — every class gets val_fraction of its own
+    examples held out, so every class is actually represented in
+    validation. Signer-based splitting only prevents identity leakage when
+    signer_id is real; preprocess_include.py's default `per_video` mode
+    makes every clip its own fake "signer", so split_by_signer just adds
+    arbitrary alphabetical-split noise without the leakage protection it's
+    meant to provide — with ~13-22 examples spread over 40 classes, that
+    noise means many classes end up with 2-3 (or zero) validation examples,
+    making per-class accuracy numbers meaningless. Only use this when
+    signer_id is a real per_video/per_session placeholder, not genuine
+    signer metadata (in which case split_by_signer is the correct choice).
+    """
+    rng = np.random.RandomState(seed)
+    train_mask = np.zeros(len(y), dtype=bool)
+    val_mask = np.zeros(len(y), dtype=bool)
+    for cls in sorted(set(y.tolist())):
+        idx = np.where(y == cls)[0]
+        rng.shuffle(idx)
+        n_val = max(1, int(round(len(idx) * val_fraction)))
+        val_mask[idx[:n_val]] = True
+        train_mask[idx[n_val:]] = True
+    print(f"Stratified split: {train_mask.sum()} train, {val_mask.sum()} val, "
+          f"every one of {len(set(y.tolist()))} classes represented in both")
     return train_mask, val_mask
 
 
@@ -230,7 +262,10 @@ def main():
     class_to_idx = {c: i for i, c in enumerate(class_names)}
     y = np.array([class_to_idx[c] for c in y_raw], dtype=np.int64)
 
-    train_mask, val_mask = split_by_signer(signer_ids, args.val_signers, args.seed)
+    if args.split_mode == "stratified":
+        train_mask, val_mask = split_stratified(y, args.val_signers, args.seed)
+    else:
+        train_mask, val_mask = split_by_signer(signer_ids, args.val_signers, args.seed)
     X_train, y_train = X[train_mask], y[train_mask]
     X_val, y_val = X[val_mask], y[val_mask]
     print(f"Train samples: {len(X_train)}, Val samples: {len(X_val)}, Classes: {len(class_names)}")

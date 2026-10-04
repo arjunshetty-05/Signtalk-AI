@@ -15,15 +15,19 @@ which concern, useful context even without separate owners.
   conversation history + analytics, text-to-speech, and an offline-mode
   toggle are all live and tested.
 - **Gesture classifier**: trained on INCLUDE (ISL), curated down to a
-  **40-word vocabulary** (`backend/runs/exp_top40_v2/`) for **64.6%
-  validation accuracy** (up from an earlier 62.9% run, `backend/runs/exp_top40/`,
-  via a `Dense(64)` bottleneck before the softmax head and lighter
-  regularization — see "Known gotchas" below) — the full 262-word model
-  (`backend/runs/exp1/`) only reaches 6.5% given ~13-16 examples/class, so
-  the 40-word one is what the live server actually points at (see
-  `backend/.env`). Live recognition quality depends on two timing/orientation
-  details that turned out to matter a lot in practice — see "Known gotchas"
-  below.
+  **40-word vocabulary** for **89.4% validation accuracy**
+  (`backend/runs/exp_top40_stratified/`, live server's current pointer —
+  see `backend/.env`). Same model/architecture as the earlier
+  `exp_top40_v2` run (64.6%) — the jump came from fixing the *evaluation*,
+  not the model: `signer_id` is a placeholder in `per_video` mode (one fake
+  "signer" per clip), so the default signer-based val split just added
+  arbitrary noise — many of the 40 classes had only 2-3 validation
+  examples, 10 had *zero*. `train_bilstm.py --split_mode stratified`
+  guarantees every class is represented in both train and val. The full
+  262-word model (`backend/runs/exp1/`) still only reaches 6.5% given
+  ~13-16 examples/class — vocabulary breadth vs. reliability is a real
+  tradeoff at this data scale. Live recognition quality also depends on two
+  timing/orientation details — see "Known gotchas" below.
 - **Translation**: code is correct (fixed a bug where it called Google's
   ADC-authenticated client library instead of using the configured API key
   via the REST endpoint), but there's no real `GOOGLE_TRANSLATE_API_KEY`
@@ -80,7 +84,7 @@ signtalk-ai/
 │   ├── keypoint_utils.py        # MoveNet extraction, normalization, smoothing, buffering (Person A)
 │   ├── classify.py              # classify_sequence() — single source of truth (Person A)
 │   ├── main.py                  # standalone flat FastAPI app (Prompt A1, local ML-only dev/testing)
-│   ├── train_bilstm.py          # BiLSTM training pipeline, signer-split, TFLite export (Person A)
+│   ├── train_bilstm.py          # BiLSTM training pipeline, signer/stratified split, TFLite export (Person A)
 │   ├── convert_to_tflite.py     # SavedModel -> float16 TFLite, MoveNet TFLite downloader (Person A)
 │   ├── offline_inference.py     # OfflineGesturePipeline — zero-network on-device inference (Person A)
 │   ├── dataset_tools/           # record_samples, dataset_stats, feedback_queue, build_retraining_dataset,
