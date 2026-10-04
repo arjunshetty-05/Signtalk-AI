@@ -48,7 +48,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row gap-4 p-4">
+    <div className="h-screen flex flex-col md:flex-row gap-4 p-4 overflow-hidden">
       <header className="md:hidden flex items-center justify-between">
         <h1 className="text-lg font-semibold text-neon">SignTalk AI</h1>
         <button onClick={() => setPanelsOpen((v) => !v)} className="text-xs text-neutral-400">
@@ -56,7 +56,7 @@ export default function App() {
         </button>
       </header>
 
-      <main className="flex-1 flex flex-col gap-4 min-h-[60vh]">
+      <main className="flex-1 flex flex-col gap-4 min-h-0">
         <div className="hidden md:flex items-center justify-between">
           <h1 className="text-xl font-semibold text-neon">SignTalk AI</h1>
           <div className="flex items-center gap-3">
@@ -67,7 +67,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex-1 relative min-h-[400px]">
+        <div className="flex-1 relative min-h-0">
           <WebcamView latestLabel={latestLabel} connected={connected} sendFrame={sendFrame} />
         </div>
 
@@ -77,7 +77,7 @@ export default function App() {
       </main>
 
       {panelsOpen && (
-        <aside className="w-full md:w-80 flex flex-col gap-4">
+        <aside className="w-full md:w-80 flex flex-col gap-4 min-h-0 overflow-y-auto">
           <AnalyticsPanel latestLabel={latestLabel} lastConversationEventAt={lastConversationEventAt} />
           <ConversationHistory lastConversationEventAt={lastConversationEventAt} />
         </aside>
