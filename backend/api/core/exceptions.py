@@ -39,6 +39,11 @@ class RateLimitError(AppException):
         super().__init__(message, code="rate_limited", status_code=429)
 
 
+class ForbiddenError(AppException):
+    def __init__(self, message: str = "You do not have access to this resource"):
+        super().__init__(message, code="forbidden", status_code=403)
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppException)
     async def app_exception_handler(request: Request, exc: AppException):

@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from api.auth.dependencies import CurrentUser, get_current_user
 from api.core.config import settings
+from api.core.exceptions import ForbiddenError
 from api.core.limiter import limiter
 from api.core.metrics import metrics
 
@@ -71,6 +72,8 @@ async def get_conversations(
 ):
     """Returns this user's past corrected sentences, reverse-chronological,
     backed by Firestore's `conversations` collection."""
+    if user_id != user.uid:
+        raise ForbiddenError("You can only view your own conversation history")
     try:
         from api.firebase.firebase_client import get_conversation_history
 

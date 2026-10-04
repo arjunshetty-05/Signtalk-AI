@@ -18,24 +18,40 @@ import logging
 
 import socketio
 
+from api.core.config import settings
 from api.main import app as fastapi_app
 
 logger = logging.getLogger("signtalk.socketio")
 
-sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=settings.CORS_ORIGINS)
 socket_app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app)
 
 
 @sio.event
 async def connect(sid, environ, auth):
-    """Clients should connect with `auth: {token, uid}` and immediately be
-    joined to a room keyed by their Firebase uid."""
-    uid = (auth or {}).get("uid")
-    if uid:
-        await sio.enter_room(sid, uid)
-        logger.info("Socket %s joined room %s", sid, uid)
-    else:
-        logger.warning("Socket %s connected without a uid — not joined to any room", sid)
+    """Clients must connect with `auth: {token}` — a Firebase Auth ID token.
+    The uid used to join a room comes from the verified token, never from a
+    client-supplied value, so a socket can only ever join its own user's
+    room."""
+    from api.auth.dependencies import _ensure_firebase_initialized
+
+    token = (auth or {}).get("token")
+    if not token:
+        logger.warning("Socket %s connected without a token — refusing", sid)
+        raise socketio.exceptions.ConnectionRefusedError("Missing auth token")
+
+    try:
+        _ensure_firebase_initialized()
+        from firebase_admin import auth as firebase_auth
+
+        decoded = firebase_auth.verify_id_token(token)
+    except Exception as exc:
+        logger.warning("Socket %s auth failed: %s", sid, exc)
+        raise socketio.exceptions.ConnectionRefusedError("Invalid or expired auth token") from exc
+
+    uid = decoded.get("uid") or decoded.get("user_id")
+    await sio.enter_room(sid, uid)
+    logger.info("Socket %s joined room %s", sid, uid)
 
 
 @sio.event
