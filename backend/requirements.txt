@@ -1,0 +1,53 @@
+# SignTalk AI — Backend requirements (consolidated across Persons A, B, C)
+# Pinned versions. Install with: pip install -r requirements.txt
+
+# setuptools<81 — must come before tensorflow-hub installs. Newer setuptools
+# (82+) dropped the bundled pkg_resources module, which tensorflow-hub's
+# __init__.py still imports directly. Without this pin, `import tensorflow_hub`
+# (used by keypoint_utils.py) fails with ModuleNotFoundError: No module named
+# 'pkg_resources'.
+setuptools<81
+
+# --- Web framework / server ---
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+python-multipart==0.0.9
+pydantic==2.7.4
+
+# --- Auth / security / rate limiting ---
+firebase-admin==6.5.0
+slowapi==0.1.9
+
+# --- Realtime ---
+python-socketio==5.11.3
+
+# --- ML core (Person A) ---
+opencv-python==4.10.0.84
+# 2.15.0, not 2.13.1 — 2.13.1 caps typing-extensions<4.6.0, which conflicts
+# with fastapi/pydantic/torch (all need >=4.6.1+). 2.15 relaxed that cap.
+tensorflow==2.15.0
+tensorflow-hub==0.16.1
+numpy==1.24.3
+pandas==1.5.3
+scikit-learn==1.3.2
+matplotlib==3.7.5
+seaborn==0.13.2
+
+# --- Intelligence layer (Person B) ---
+deepface==0.0.93
+transformers==4.42.3
+torch==2.3.1
+google-generativeai==0.7.1
+openai-whisper==20231117
+gTTS==2.5.1
+# TTS (Coqui, offline TTS fallback) is intentionally NOT in this file —
+# its dependency pins conflict hard with everything else here (old numba/
+# pandas requirements). Install it separately, in its own venv or after
+# everything else, from requirements-offline-tts.txt if/when you need the
+# offline TTS path. Online mode (gTTS, above) works without it.
+soundfile==0.12.1
+google-cloud-translate==3.15.3
+
+# --- Deployment / utility ---
+python-dotenv==1.0.1
+requests==2.32.3

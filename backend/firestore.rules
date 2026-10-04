@@ -1,0 +1,42 @@
+rules_version = '2';
+
+// SignTalk AI — Firestore Security Rules (Person C, Prompt C2)
+//
+// - users, conversations, emotion_logs, gesture_logs: an authenticated user
+//   may only read/write documents whose user_id (or session_id, used
+//   interchangeably with uid in this project) matches their own uid.
+// - translations: read-only to any authenticated client; writes are only
+//   permitted via the backend's service account (Admin SDK bypasses rules
+//   entirely, so no `allow write` clause is needed/granted to clients here).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /conversations/{docId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.user_id;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.user_id;
+      allow update, delete: if false; // conversations are append-only from the client's perspective
+    }
+
+    match /emotion_logs/{docId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.session_id;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.session_id;
+      allow update, delete: if false;
+    }
+
+    match /gesture_logs/{docId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.session_id;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.session_id;
+      allow update, delete: if false;
+    }
+
+    match /translations/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false; // service account (Admin SDK) only — bypasses rules
+    }
+  }
+}

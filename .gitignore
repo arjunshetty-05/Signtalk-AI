@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+backend/_probe.py
+backend/data/
+backend/runs/
+backend/logs/
+backend/models/*.tflite
+.env
+
+# Node / React
+node_modules/
+frontend/dist/
+frontend/.env
+
+# Flutter
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins*
+mobile/lib/firebase_options.dart
+mobile/assets/models/*.tflite
+
+# Secrets
+secrets/
+*.json.key
+firebase-service-account*.json

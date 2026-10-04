@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Non-secret config — safe to inline here or override at deploy time
+      - CORS_ORIGIN_WEB=http://localhost:3000
+      - CORS_ORIGIN_PROD=https://signtalk.vercel.app
+      - RATE_LIMIT_PREDICTION=30/minute
+      - RATE_LIMIT_READONLY=100/minute
+      - ENV=development
+      - FIREBASE_SERVICE_ACCOUNT_PATH=/run/secrets/firebase-service-account.json
+      - FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET}
+      # Secrets — set these in your shell or a local .env file (never commit
+      # real values); docker-compose reads .env automatically if present.
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GOOGLE_TRANSLATE_API_KEY=${GOOGLE_TRANSLATE_API_KEY}
+    volumes:
+      # Mount your real Firebase service-account JSON here — DO NOT bake it
+      # into the image. Get this file from Firebase Console > Project
+      # Settings > Service Accounts > Generate new private key.
+      - ./secrets/firebase-service-account.json:/run/secrets/firebase-service-account.json:ro
+      # Mount trained model artifacts (produced by train_bilstm.py /
+      # convert_to_tflite.py) so they survive container rebuilds.
+      - ./models:/app/models
+    restart: unless-stopped

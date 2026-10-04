@@ -1,0 +1,8 @@
+{
+  "_note": "PLACEHOLDER — replace with the real labels.json exported by train_bilstm.py (backend/runs/<exp>/labels.json). Shape: {\"<class_index>\": \"<SIGN_LABEL>\", ...}",
+  "0": "HELLO",
+  "1": "THANK_YOU",
+  "2": "YES",
+  "3": "NO",
+  "4": "HELP"
+}

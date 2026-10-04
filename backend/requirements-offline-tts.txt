@@ -1,0 +1,13 @@
+# Optional — Coqui TTS (offline text-to-speech fallback, tts.py's
+# mode="offline" path). Install this AFTER requirements.txt succeeds:
+#   pip install -r requirements-offline-tts.txt
+#
+# This is separated out because TTS==0.22.0 pulls in old/strict pins
+# (numba, pandas<2.0, etc.) that conflict with the rest of the stack when
+# resolved together. Installing it in a second pass avoids that.
+#
+# If this still fails to resolve, offline TTS is safe to skip entirely for
+# a demo — gTTS (online mode, already in requirements.txt) covers text-to-
+# speech in the meantime, and synthesize_speech() in tts.py will simply
+# raise if offline mode is requested without this installed.
+TTS==0.22.0
