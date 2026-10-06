@@ -36,6 +36,19 @@ export async function confirmChoice(payload) {
 }
 
 /**
+ * POST /api/compose — build a sentence (en/hi/kn) from signed words (Section 6.3).
+ *
+ * @param {{words: string[], emotion?: string, history?: string[],
+ *          scenario_id?: string|null}} payload
+ * @returns {Promise<{sentences: {en: string, hi: string, kn: string},
+ *          source: string, verified: boolean, latency_ms: number}>}
+ */
+export async function composeSentence(payload) {
+  const { data } = await api.post("/compose", payload);
+  return data;
+}
+
+/**
  * GET /api/vocab — the demo vocabulary (Section 6.6).
  * @returns {Promise<Array<{label: string, category: string, demo: boolean}>>}
  */

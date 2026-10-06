@@ -461,3 +461,63 @@ Accepted-accuracy and coverage on a held-out recording set can only be measured
 once Phase 2 training has produced a model and signers have recorded clips.
 `tools/pick_thresholds.py` (writing decision thresholds from the validation
 risk-coverage curve) is still to be built in the Phase 3/4 boundary.
+
+---
+
+## Phase 5 — Language layer: compose + translate + speak (working offline)
+
+Scope done in this run: the full sentence layer (Section 5.10) end to end, and
+it works **with no LLM key and no network** — the demo-safe path. This is
+independent of model training, so it is usable today with the placeholder vocab.
+
+### What was added
+
+- **`core/signtalk_core/compose.py`** — determinism-first sentence builder:
+  scripted table (`config/sentences.json`) → optional LLM (behind a provider
+  interface, with the Section 5.10 safety check that every signed word appears
+  in the English output) → template fallback via the offline phrasebook. Pure
+  Python; the LLM lives behind `LLMProvider`.
+- **`server/app/providers.py`** — `LLM_PROVIDER` selector: `none` (default,
+  `NullProvider`), `gemini` (`GeminiProvider`: strict-JSON, 4 s timeout, 1
+  retry, model from `GEMINI_MODEL` so a retired model is swappable), `ollama`
+  ([VERIFY] not implemented, falls back to none).
+- **`POST /api/compose` (Section 6.3)** — `{words, emotion, history,
+  scenario_id}` → `{sentences{en,hi,kn}, source, verified, latency_ms}`.
+- **Config content** — `config/sentences.json` (8 scripted sentences) and
+  `config/phrasebook.json` (12 words × en/hi/kn) seeded for the placeholder
+  vocab. **[VERIFY] all Hindi/Kannada are PLACEHOLDER machine translations and
+  MUST be native-speaker-verified before any demo (R6).**
+- **Web sentence layer** — `SentenceBox` collects accepted/confirmed words,
+  calls `/api/compose`, shows the sentence large/high-contrast with an
+  en/hi/kn switch, and speaks it with the browser's voice (`useSpeech` hook,
+  SpeechSynthesis — free, offline). Strict mode: speaks on an explicit "Speak"
+  tap. Flushes on 2.5 s idle, 8 words, or "Finish".
+
+### Verification run in this environment (real output)
+
+```text
+$ .\.venv\Scripts\python.exe -m pytest core/tests server/tests -q
+44 passed, 1 warning          # +10 (7 compose core + 3 compose endpoint)
+
+$ .\.venv\Scripts\python.exe -m ruff check core/ server/
+All checks passed!
+
+$ cd web && npm run build
+vite v5.3.1 ... ✓ 90 modules transformed ... built            # exit 0
+```
+
+### Gate 5 status
+
+The functional target of Gate 5 — "with no LLM key, every demo sentence still
+appears and speaks in all three languages" — is **met in code**: compose with
+`LLM_PROVIDER=none` returns scripted/template sentences and the browser speaks
+them. The remaining Gate-5 items are human/manual, not code:
+
+- Native-speaker verification of every Hindi/Kannada demo sentence (R6).
+- Confirming Hindi/Kannada **voices exist on the demo laptop** (SpeechSynthesis
+  voice availability varies by device — Section 5.12); test on the real machine.
+- Recording p95 compose latency **with** a real `GEMINI_MODEL` key, if the LLM
+  path is used at all (the demo does not require it).
+
+> Direction B (mic → Whisper captions over `/ws/speech`) is NOT built yet — it
+> is the remaining Phase-5 item and is lower priority than the sign→voice demo.

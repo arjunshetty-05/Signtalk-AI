@@ -1,4 +1,45 @@
 {
-  "note": "Scripted sentence table (PROJECT_CONTEXT Section 5.10, preference 1). Maps a known word sequence to a pre-verified sentence in en/hi/kn (native-speaker verified before the demo). Deterministic, no LLM, no hallucination risk. Keys are space-joined word sequences. Empty for Phase 0.",
-  "sentences": {}
+  "note": "Scripted sentence table (PROJECT_CONTEXT 5.10 pref 1): a space-joined lower-case word sequence -> a pre-verified en/hi/kn sentence. Deterministic, no LLM. [VERIFY] — these are PLACEHOLDER sentences for the 12 placeholder demo signs and MUST be verified by native Hindi and Kannada speakers before the demo (R6). Cover every sentence used in the demo script here. Keys match the order words are signed.",
+  "sentences": {
+    "hello": {
+      "en": "Hello.",
+      "hi": "नमस्ते।",
+      "kn": "ನಮಸ್ಕಾರ."
+    },
+    "help": {
+      "en": "I need help.",
+      "hi": "मुझे मदद चाहिए।",
+      "kn": "ನನಗೆ ಸಹಾಯ ಬೇಕು."
+    },
+    "help please": {
+      "en": "Please help me.",
+      "hi": "कृपया मेरी मदद करें।",
+      "kn": "ದಯವಿಟ್ಟು ನನಗೆ ಸಹಾಯ ಮಾಡಿ."
+    },
+    "water please": {
+      "en": "Water, please.",
+      "hi": "कृपया पानी दीजिए।",
+      "kn": "ದಯವಿಟ್ಟು ನೀರು ಕೊಡಿ."
+    },
+    "water": {
+      "en": "I want water.",
+      "hi": "मुझे पानी चाहिए।",
+      "kn": "ನನಗೆ ನೀರು ಬೇಕು."
+    },
+    "pain help": {
+      "en": "I am in pain, please help.",
+      "hi": "मुझे दर्द है, कृपया मदद करें।",
+      "kn": "ನನಗೆ ನೋವಾಗಿದೆ, ದಯವಿಟ್ಟು ಸಹಾಯ ಮಾಡಿ."
+    },
+    "eat more": {
+      "en": "I want to eat more.",
+      "hi": "मुझे और खाना है।",
+      "kn": "ನನಗೆ ಇನ್ನಷ್ಟು ತಿನ್ನಬೇಕು."
+    },
+    "thank you": {
+      "en": "Thank you.",
+      "hi": "धन्यवाद।",
+      "kn": "ಧನ್ಯವಾದ."
+    }
+  }
 }

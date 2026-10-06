@@ -4,6 +4,7 @@ import { recognizeClip, confirmChoice } from "../api.js";
 import VideoPreview from "../components/VideoPreview.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import PreflightCheck from "../components/PreflightCheck.jsx";
+import SentenceBox from "../components/SentenceBox.jsx";
 
 // Capture frame rate for the base64 JPEG batch sent to /api/recognize. The
 // server resamples to config `sequence_length`, so this only needs to be a
@@ -17,9 +18,11 @@ const CAPTURE_FPS = 15;
  * frame batch to /api/recognize, then show the returned label (or the reject
  * reason). The capture state (idle / recording / analysing) is always visible.
  *
- * @param {{signerId: string}} props
+ * @param {{signerId: string, onWord?: (label: string) => void}} props
+ *   `onWord` is called with each accepted/confirmed word so the parent can
+ *   collect them into the sentence buffer.
  */
-export default function CaptureScreen({ signerId }) {
+export default function CaptureScreen({ signerId, onWord }) {
   const { videoRef, ready, error, startCapture, stopCapture } = useWebcam();
   const [state, setState] = useState("idle"); // idle | recording | analysing
   const [frameCount, setFrameCount] = useState(0);
@@ -27,8 +30,19 @@ export default function CaptureScreen({ signerId }) {
   const [message, setMessage] = useState("");
   const [confirmed, setConfirmed] = useState(null); // label the user tapped
   const [preflightOk, setPreflightOk] = useState(false);
+  const [words, setWords] = useState([]); // sentence buffer
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // Append an accepted/confirmed word to the sentence buffer, then notify any
+  // parent that also wants it (onWord is optional).
+  const addWord = useCallback(
+    (label) => {
+      setWords((prev) => [...prev, label]);
+      if (onWord) onWord(label);
+    },
+    [onWord]
+  );
 
   const beginRecording = useCallback(() => {
     if (!ready || stateRef.current !== "idle") return;
@@ -44,6 +58,7 @@ export default function CaptureScreen({ signerId }) {
   const onConfirmChoice = useCallback(
     async (label) => {
       setConfirmed(label);
+      addWord(label); // confirmed words also enter the sentence buffer
       if (!result?.clip_id) return;
       try {
         await confirmChoice({ clip_id: result.clip_id, chosen_label: label });
@@ -51,7 +66,7 @@ export default function CaptureScreen({ signerId }) {
         // Non-fatal: the word is still shown; the sample just wasn't logged.
       }
     },
-    [result]
+    [result, addWord]
   );
 
   const endRecordingAndUpload = useCallback(async () => {
@@ -76,6 +91,9 @@ export default function CaptureScreen({ signerId }) {
         setMessage(rejectMessage(data.reject_reason));
       } else {
         setMessage("");
+        if (data.decision === "accept" && data.label) {
+          addWord(data.label); // accepted words enter the sentence buffer
+        }
       }
     } catch (err) {
       setMessage(
@@ -86,7 +104,7 @@ export default function CaptureScreen({ signerId }) {
     } finally {
       setState("idle");
     }
-  }, [signerId, stopCapture]);
+  }, [signerId, stopCapture, addWord]);
 
   // Hold-Space push-to-sign. Ignore auto-repeat keydown events.
   useEffect(() => {
@@ -212,6 +230,8 @@ export default function CaptureScreen({ signerId }) {
           </p>
         )}
       </div>
+
+      <SentenceBox words={words} onClear={() => setWords([])} />
     </section>
   );
 }

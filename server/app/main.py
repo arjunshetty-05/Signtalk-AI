@@ -30,7 +30,8 @@ from signtalk_core.config import load_config
 
 from server.app.storage import Storage
 from server.app.recognizer import load_bundle, load_detector
-from server.app.routers import health, vocab, recognize, confirm, enroll
+from server.app.providers import build_provider
+from server.app.routers import health, vocab, recognize, confirm, compose, enroll
 
 logger = logging.getLogger("signtalk.server")
 
@@ -102,6 +103,10 @@ def create_app() -> FastAPI:
         # artifacts), in which case recognize_clip runs its Phase-1 fallback.
         app.state.detector = load_detector()
         app.state.bundle = load_bundle()
+        # Sentence-layer LLM provider (none/gemini/ollama); synonyms for the
+        # LLM safety check. NullProvider by default -> scripted/template only.
+        app.state.llm_provider = build_provider()
+        app.state.synonyms = None
         yield
         app.state.storage.close()
 
@@ -120,6 +125,7 @@ def create_app() -> FastAPI:
     app.include_router(vocab.router)
     app.include_router(recognize.router)
     app.include_router(confirm.router)
+    app.include_router(compose.router)
     app.include_router(enroll.router)
 
     return app

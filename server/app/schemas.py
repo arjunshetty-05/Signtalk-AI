@@ -80,6 +80,32 @@ class ConfirmResponse(BaseModel):
     stored: bool
 
 
+class ComposeRequest(BaseModel):
+    """POST /api/compose body (Section 6.3)."""
+
+    words: list[str] = Field(..., description="accumulated signed words, in order")
+    emotion: str = "neutral"
+    history: list[str] = Field(default_factory=list)
+    scenario_id: str | None = None
+
+
+class ComposeSentences(BaseModel):
+    """The en/hi/kn sentence triple (Section 6.3)."""
+
+    en: str
+    hi: str
+    kn: str
+
+
+class ComposeResponse(BaseModel):
+    """POST /api/compose response — the exact Section 6.3 shape."""
+
+    sentences: ComposeSentences
+    source: str  # "scripted" | "llm" | "template"
+    verified: bool
+    latency_ms: int
+
+
 class VocabItem(BaseModel):
     """GET /api/vocab item (Section 6.6)."""
 

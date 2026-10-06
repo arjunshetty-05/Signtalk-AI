@@ -1,4 +1,17 @@
 {
-  "note": "Offline phrasebook (PROJECT_CONTEXT Section 5.10 preference 3 / 5.11). Maps a single English word to its Hindi/Kannada translations for the template fallback when no scripted sentence or LLM is available. Native-speaker verified before the demo. Empty for Phase 0.",
-  "words": {}
+  "note": "Offline phrasebook (PROJECT_CONTEXT 5.10 pref 3 / 5.11): single English word -> Hindi/Kannada for the template fallback. [VERIFY] — these are PLACEHOLDER machine translations for the 12 placeholder demo signs and MUST be reviewed by a native Hindi and Kannada speaker before any demo (R6). Keys are lower-case English words.",
+  "words": {
+    "hello":      { "en": "hello",     "hi": "नमस्ते",      "kn": "ನಮಸ್ಕಾರ" },
+    "thank you":  { "en": "thank you", "hi": "धन्यवाद",     "kn": "ಧನ್ಯವಾದ" },
+    "help":       { "en": "help",      "hi": "मदद",         "kn": "ಸಹಾಯ" },
+    "water":      { "en": "water",     "hi": "पानी",        "kn": "ನೀರು" },
+    "pain":       { "en": "pain",      "hi": "दर्द",        "kn": "ನೋವು" },
+    "yes":        { "en": "yes",       "hi": "हाँ",         "kn": "ಹೌದು" },
+    "no":         { "en": "no",        "hi": "नहीं",        "kn": "ಇಲ್ಲ" },
+    "eat":        { "en": "eat",       "hi": "खाना",        "kn": "ತಿನ್ನು" },
+    "stop":       { "en": "stop",      "hi": "रुको",        "kn": "ನಿಲ್ಲಿಸಿ" },
+    "more":       { "en": "more",      "hi": "और",          "kn": "ಇನ್ನಷ್ಟು" },
+    "name":       { "en": "name",      "hi": "नाम",         "kn": "ಹೆಸರು" },
+    "please":     { "en": "please",    "hi": "कृपया",       "kn": "ದಯವಿಟ್ಟು" }
+  }
 }
