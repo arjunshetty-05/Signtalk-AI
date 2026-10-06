@@ -331,3 +331,84 @@ No source fixes were required, so no code was changed in this pass; only this
 log entry was added. The throwaway `_smoke.py` helper was deleted after use.
 
 Everything above is a real command and its real output; nothing is invented.
+
+---
+
+## Phase 2 — Models, ensemble, and the recognition pipeline (code only)
+
+Scope done in this run: all Phase-2 **code** — the second ensemble member, TTA,
+calibration, fusion, the decision engine, the full upgraded `recognize_clip`,
+and the training/preprocessing/export scripts you run on your own machine. The
+server now auto-loads a real ensemble when trained artifacts are present and
+otherwise falls back to the Phase-1 behaviour, so nothing breaks with no models
+installed.
+
+**No accuracy number is claimed.** Downloading INCLUDE, extracting landmarks,
+and training must run on your GPU machine (RTX 4050) — that cannot happen in the
+agent/CI environment, so Gate 2's measured INCLUDE-50 number is still pending
+and must be filled in here after you run the scripts below.
+
+### What was added (all unit-tested, lint-clean)
+
+- `core/signtalk_core/models/pose_transformer.py` — M2, a small Transformer
+  encoder (d_model 128, 4 heads, 4 layers) over the shared 374-dim features.
+- `core/signtalk_core/tta.py` — temporal-trim TTA views + agreement fraction (L9).
+- `core/signtalk_core/calibration.py` — temperature scaling, fit on validation (L8).
+- `core/signtalk_core/fusion.py` — weighted-average fusion + optional context
+  prior, with model/TTA agreement diagnostics (L8/L11).
+- `core/signtalk_core/decision.py` — accept / confirm / reject engine (L10).
+- `core/signtalk_core/recognize.py` — rewritten to run TTA → ensemble forward →
+  calibrate → fuse → decide, driven by a `RecognizerBundle`; Phase-1 fallback
+  preserved when no bundle/detector is supplied.
+- `training/prepare_include.py`, `training/dataset.py`, `training/train.py`,
+  `training/export_onnx.py` — preprocessing (with a per-clip failure manifest,
+  Section 8.2), session-aware dataset/splits, trainer (label smoothing 0.1,
+  weight decay, early stopping, fixed seed), and ONNX export with a parity check.
+- `tools/download_mediapipe_bundle.py` — fetch the Holistic `.task` bundle.
+- `server/app/recognizer.py` — loads an optional detector + ensemble at startup
+  from env vars (`HOLISTIC_MODEL_PATH`, `RECOGNIZER_MANIFEST`); skeleton mode
+  when unset.
+
+### Verification run in this environment (real output)
+
+```text
+$ .\.venv\Scripts\python.exe -m pytest core/tests server/tests -q
+32 passed, 1 warning
+
+$ .\.venv\Scripts\python.exe -m ruff check core/ server/ training/ tools/
+All checks passed!
+```
+
+(32 tests = the original 18 + 14 new for calibration/fusion/decision/TTA.
+`recognize_clip` smoke-checked: no-hands clip → reject/hands_not_visible;
+2-model `RecognizerBundle` wires up and returns the full Section 6.1 key set.)
+
+### What YOU must run on the GPU machine for Gate 2 (not run here)
+
+```text
+# 1. one-time: fetch the MediaPipe holistic bundle  ([VERIFY] the URL)
+python tools/download_mediapipe_bundle.py
+
+# 2. download INCLUDE / INCLUDE-50 videos into data/raw/include/<label>/*.mp4
+#    (Zenodo record 4010759 — see PROJECT_CONTEXT Section 4.1 / 17)
+
+# 3. preprocess videos -> feature .npz (+ a failure manifest)
+python training/prepare_include.py --include-root data/raw/include \
+    --out-dir data/processed/include --model models/holistic_landmarker.task
+
+# 4. train M1 (gru) and M2 (transformer), a couple of seeds each
+python training/train.py --processed-dir data/processed/include --arch gru         --seed 0 --out runs/m1_gru
+python training/train.py --processed-dir data/processed/include --arch transformer --seed 0 --out runs/m2_tf
+
+# 5. export ONNX with parity check (optional but recommended for serving)
+python training/export_onnx.py --arch gru --checkpoint runs/m1_gru/best.pt \
+    --num-classes <N> --out models/m1_gru.onnx
+```
+
+Then paste the real `metrics.json` validation top-1/top-5 numbers here, and
+write a `RECOGNIZER_MANIFEST` JSON (see `server/app/recognizer.py`) pointing at
+the trained checkpoints so the server serves the ensemble.
+
+> Gate-2 reminder (Section 1.6): the stratified split in `train.py` is fine for
+> the official-INCLUDE baseline, but the honest signer-independent number needs
+> a whole-signer hold-out — do that before quoting a generalisation figure.

@@ -67,7 +67,11 @@ def _run_and_log(
 ) -> dict:
     """Call recognize_clip, persist the decision, return the 6.1 dict."""
     cfg = request.app.state.config
-    result = recognize_clip(frames, fps, signer_id, scenario_id, cfg=cfg)
+    detector = getattr(request.app.state, "detector", None)
+    bundle = getattr(request.app.state, "bundle", None)
+    result = recognize_clip(
+        frames, fps, signer_id, scenario_id, cfg=cfg, detector=detector, bundle=bundle
+    )
 
     thresholds = {
         "t_accept": cfg.decision.t_accept,

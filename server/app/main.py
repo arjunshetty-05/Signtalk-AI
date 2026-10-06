@@ -29,6 +29,7 @@ except Exception:  # noqa: BLE001 - dotenv is a convenience, not a requirement
 from signtalk_core.config import load_config
 
 from server.app.storage import Storage
+from server.app.recognizer import load_bundle, load_detector
 from server.app.routers import health, vocab, recognize, enroll
 
 logger = logging.getLogger("signtalk.server")
@@ -96,6 +97,11 @@ def create_app() -> FastAPI:
         # Shared, process-wide state: config + SQLite storage (guest mode).
         app.state.config = load_config()
         app.state.storage = Storage()
+        # Optional serving artifacts: a MediaPipe detector and a trained
+        # ensemble bundle. Both are None in skeleton mode (no env vars / no
+        # artifacts), in which case recognize_clip runs its Phase-1 fallback.
+        app.state.detector = load_detector()
+        app.state.bundle = load_bundle()
         yield
         app.state.storage.close()
 
