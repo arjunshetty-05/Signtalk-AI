@@ -160,3 +160,88 @@ test (port 8010 no longer listening).
   FEAT-003.
 
 Everything above is a real command and its real output; nothing is invented.
+
+---
+
+## Gate 1 — Web client (CaptureScreen + EnrollScreen) (FEAT-004)
+
+Scope done in this run: the React + Vite + Tailwind web app under `web/`
+(**no Firebase, no login wall**). A hold-Space push-to-sign capture screen that
+records a whole clip, uploads the UN-mirrored base64 JPEG frame batch to
+`/api/recognize`, and shows the returned label (or a reject message); plus an
+enrollment screen (choose signer, pick a sign from `/api/vocab`, record N reps
+with a live counter, POST each clip to `/api/enroll/clip` under a session from
+`/api/enroll/start`). The v2 `frontend/` folder is untouched. **No accuracy is
+claimed** — the model is still random-init (Section 0.3).
+
+### Build (real command + output)
+
+```text
+$ cd web && npm install
+added 198 packages, and audited 199 packages in 39s
+
+$ npm run build
+> signtalk-ai-web@0.1.0 build
+> vite build
+vite v5.3.1 building for production...
+✓ 87 modules transformed.
+dist/index.html                   0.40 kB │ gzip:  0.27 kB
+dist/assets/index-DtZ9HyNv.css    9.70 kB │ gzip:  2.70 kB
+dist/assets/index-D1QbZXN4.js   189.38 kB │ gzip: 63.46 kB
+✓ built in 8.56s
+# EXIT=0, web/dist/ produced
+```
+
+`web/node_modules/` and `web/dist/` are both gitignored (confirmed via
+`git check-ignore`) and are not committed.
+
+### Gate-1 manual acceptance procedure (NOT yet measured)
+
+This is the step-by-step procedure to run the Gate-1 walking-skeleton check
+(Section 0.3: "hold Space, sign one of ~5 words, a word appears on screen —
+accuracy is irrelevant"). **It has not been executed here**; a webcam, a human
+signer, and the MediaPipe `.task` bundle are needed, so no result is recorded
+below. When run, paste the real observed outcome here — never a fabricated
+accuracy number.
+
+1. Start the API server (binds `127.0.0.1:8000`, the port the Vite dev proxy
+   targets):
+
+   ```text
+   .\.venv\Scripts\python.exe -m uvicorn server.app.main:app --host 127.0.0.1 --port 8000
+   ```
+
+2. In a second terminal, start the web dev server:
+
+   ```text
+   cd web && npm run dev
+   ```
+
+3. Open the printed URL (default `http://localhost:5173`) in a browser and
+   allow webcam access when prompted. The Capture screen loads with the
+   one-line consent notice and a mirrored live preview.
+4. Hold **Space** (or press and hold the on-screen button). The status badge
+   switches to **Recording…** and a frame counter increments.
+5. Perform one of the demo signs (e.g. `hello`, `thank you`, `help`, `yes`,
+   `no`) and release Space. The badge shows **Analysing…**, the UN-mirrored
+   frame batch is POSTed to `/api/recognize`, and the returned `label` (or the
+   reject message, e.g. "Hands weren't visible — please sign again.") renders.
+6. **PASS** = a word (or a reject prompt) appears on screen for a held-and-
+   released sign. Accuracy of the word is irrelevant for Gate 1 and must not be
+   reported as a quality figure.
+
+   > Reality check for the current skeleton: because no MediaPipe `.task`
+   > bundle is wired up yet (FEAT-003 note above), real captures currently come
+   > back as `reject` / `hands_not_visible`. The reject prompt still appearing
+   > on screen demonstrates the full capture → upload → response → render loop;
+   > a recognised label will appear once the detector bundle and trained
+   > weights are added in a later phase.
+
+### What was NOT done in this slice
+
+- **No live browser run recorded.** The build gate (`npm run build` -> exit 0,
+  `dist/` produced) is the automated check that ran here; the manual hold-Space
+  browser check above is documented but not yet executed, so no outcome and no
+  accuracy number is claimed.
+
+Everything above is a real command and its real output; nothing is invented.

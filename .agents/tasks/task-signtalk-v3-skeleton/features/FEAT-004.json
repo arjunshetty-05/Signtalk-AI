@@ -1,0 +1,33 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "New React + Vite + Tailwind web app under web/ (NO Firebase, no login wall): a hold-Space push-to-sign capture screen that uploads a whole clip to /api/recognize and shows the returned word, plus an enrollment recording screen (choose signer, pick a sign, record N reps with a counter) that POSTs clips to /api/enroll/clip. Depends on FEAT-003 (endpoints exist). Do NOT touch the v2 frontend/ folder.",
+  "status": "completed",
+  "steps": [
+    "Read context.json first (web lives under web/ NOT frontend/; NO firebase dependency; never mirror the uploaded video). ",
+    "Create web/package.json: React 18.3.1 + react-dom, Vite 5.3.1, @vitejs/plugin-react, Tailwind 3.4.4 + postcss + autoprefixer, axios. Do NOT include the 'firebase' dependency. Scripts: dev, build, preview.",
+    "Create web/vite.config.js (React plugin; dev server proxy '/api' -> http://127.0.0.1:8000 so the client calls same-origin /api in dev), web/index.html, web/tailwind.config.js (content globs for src), web/postcss.config.js, web/src/index.css (Tailwind directives), web/src/main.jsx (mount App).",
+    "Create web/src/api.js: an axios instance with baseURL '/api' and helpers recognizeClip(payload), getVocab(), enrollStart(signerId), enrollClip(payload).",
+    "Create web/src/App.jsx: a top-level screen switch/toggle between Capture and Enrollment; render a one-line consent notice (Section 2.7: video is sent to our server and may be stored for training/evaluation). Keyboard-operable controls, high-contrast text (accessibility rule 12.13).",
+    "Create web/src/screens/CaptureScreen.jsx: open the webcam (getUserMedia), show a preview that MAY be CSS-mirrored (transform: scaleX(-1)) but upload UN-mirrored frames. Implement hold-Space push-to-sign: on Space keydown start capture (MediaRecorder for a WebM clip OR grab frames to base64 JPEG at the configured fps), on Space keyup stop and upload the WHOLE clip/frame batch (plus fps + signer_id) to /api/recognize. Show 'Analysing...' then render the returned label (or the reject_reason message, e.g. 'please sign again'). Capture state (idle/recording/analysing) is visible on screen.",
+    "Create web/src/screens/EnrollScreen.jsx: choose/enter a signer, fetch /api/vocab and pick a sign, show a target rep count N and a live counter; for each rep, record a clip (hold-Space or a Record button) and POST it to /api/enroll/clip under a session started via /api/enroll/start; update the counter from /api/enroll/progress. Clips are saved server-side under data/enroll/<signer>/<session>/.",
+    "Add small web/src/components/ as needed (e.g. a CaptureControls or VideoPreview component). Keep code readable.",
+    "Run `cd web && npm install && npm run build` and confirm it exits 0 and emits web/dist/. Fix any build errors.",
+    "Document the Gate-1 manual acceptance procedure in docs/PROGRESS.md (with the server running, hold Space, sign one of ~5 words, a word appears — accuracy irrelevant). Do NOT fabricate accuracy.",
+    "Commit locally on branch v3-skeleton (e.g. 'feat(web): capture (hold-Space) + enrollment screens, no firebase'). Do NOT push. Do NOT commit web/node_modules or web/dist."
+  ],
+  "acceptance_criteria": [
+    "`cd web && npm install && npm run build` exits 0 and produces web/dist/.",
+    "No 'firebase' dependency in web/package.json and no login wall in the app.",
+    "CaptureScreen implements hold-Space push-to-sign, uploads a whole clip/frame batch (UN-mirrored) to /api/recognize, and displays the returned label or reject message.",
+    "EnrollScreen lets the user choose a signer, pick a sign from /api/vocab, record N reps with a counter, and POST each clip to /api/enroll/clip.",
+    "The v2 frontend/ folder is untouched.",
+    "A consent notice is shown; controls are keyboard-operable."
+  ],
+  "verification": [
+    "Run from <WT>\\web: `npm install` then `npm run build` -> exit 0, dist/ directory created.",
+    "Manual Gate-1 check recorded in docs/PROGRESS.md: with uvicorn running and `npm run dev`, hold Space, sign one of ~5 words, confirm a word appears on screen (accuracy irrelevant)."
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}
