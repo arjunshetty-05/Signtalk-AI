@@ -25,3 +25,7 @@ mobile/assets/models/*.tflite
 secrets/
 *.json.key
 firebase-service-account*.json
+
+# v3 data & models (gitignored per PROJECT_CONTEXT Section 7)
+/data/
+/models/
