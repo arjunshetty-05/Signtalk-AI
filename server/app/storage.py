@@ -61,8 +61,15 @@ CREATE TABLE IF NOT EXISTS enrollment (
     clip_path TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS confirmations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clip_id TEXT NOT NULL,
+    chosen_label TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_enroll_signer ON enrollment(signer_id);
 CREATE INDEX IF NOT EXISTS idx_decisions_signer ON decisions(signer_id);
+CREATE INDEX IF NOT EXISTS idx_confirm_clip ON confirmations(clip_id);
 """
 
 
@@ -116,6 +123,21 @@ class Storage:
                     json.dumps(thresholds) if thresholds is not None else None,
                     _now(),
                 ),
+            )
+            self._conn.commit()
+
+    def log_confirmation(self, *, clip_id: str, chosen_label: str) -> None:
+        """Record a user's confirm-tap for a clip (Section 6.2).
+
+        The chosen candidate becomes a labelled sample for later review
+        (``data/feedback`` active-learning flow, Section 8.6) — it is NEVER
+        auto-fed into training here.
+        """
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO confirmations (clip_id, chosen_label, created_at)
+                   VALUES (?, ?, ?)""",
+                (clip_id, chosen_label, _now()),
             )
             self._conn.commit()
 

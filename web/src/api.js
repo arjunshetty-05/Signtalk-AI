@@ -25,6 +25,17 @@ export async function recognizeClip(payload) {
 }
 
 /**
+ * POST /api/confirm — record the user's tap on a candidate chip (Section 6.2).
+ *
+ * @param {{clip_id: string, chosen_label: string}} payload
+ * @returns {Promise<{clip_id: string, chosen_label: string, stored: boolean}>}
+ */
+export async function confirmChoice(payload) {
+  const { data } = await api.post("/confirm", payload);
+  return data;
+}
+
+/**
  * GET /api/vocab — the demo vocabulary (Section 6.6).
  * @returns {Promise<Array<{label: string, category: string, demo: boolean}>>}
  */

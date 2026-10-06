@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWebcam } from "../hooks/useWebcam.js";
-import { recognizeClip } from "../api.js";
+import { recognizeClip, confirmChoice } from "../api.js";
 import VideoPreview from "../components/VideoPreview.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
+import PreflightCheck from "../components/PreflightCheck.jsx";
 
 // Capture frame rate for the base64 JPEG batch sent to /api/recognize. The
 // server resamples to config `sequence_length`, so this only needs to be a
@@ -24,6 +25,8 @@ export default function CaptureScreen({ signerId }) {
   const [frameCount, setFrameCount] = useState(0);
   const [result, setResult] = useState(null); // recognize response
   const [message, setMessage] = useState("");
+  const [confirmed, setConfirmed] = useState(null); // label the user tapped
+  const [preflightOk, setPreflightOk] = useState(false);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -31,10 +34,25 @@ export default function CaptureScreen({ signerId }) {
     if (!ready || stateRef.current !== "idle") return;
     setResult(null);
     setMessage("");
+    setConfirmed(null);
     setFrameCount(0);
     setState("recording");
     startCapture(CAPTURE_FPS, (n) => setFrameCount(n));
   }, [ready, startCapture]);
+
+  // User tapped one of the top-3 chips in a "confirm" result (Section 6.2).
+  const onConfirmChoice = useCallback(
+    async (label) => {
+      setConfirmed(label);
+      if (!result?.clip_id) return;
+      try {
+        await confirmChoice({ clip_id: result.clip_id, chosen_label: label });
+      } catch {
+        // Non-fatal: the word is still shown; the sample just wasn't logged.
+      }
+    },
+    [result]
+  );
 
   const endRecordingAndUpload = useCallback(async () => {
     if (stateRef.current !== "recording") return;
@@ -110,6 +128,14 @@ export default function CaptureScreen({ signerId }) {
 
       <VideoPreview videoRef={videoRef} mirrored recording={state === "recording"} />
 
+      <PreflightCheck videoRef={videoRef} ready={ready} onReadyChange={setPreflightOk} />
+      {ready && !preflightOk && (
+        <p className="mt-1 text-xs text-amber-300">
+          Adjust lighting/framing until the checks turn green. You can still
+          hold Space to sign anyway.
+        </p>
+      )}
+
       {state === "recording" && (
         <p className="mt-2 text-sm text-gray-300">Captured {frameCount} frames…</p>
       )}
@@ -141,18 +167,41 @@ export default function CaptureScreen({ signerId }) {
           <p className="text-lg text-amber-300" aria-live="polite">
             Analysing…
           </p>
-        ) : result && result.decision !== "reject" && result.label ? (
+        ) : confirmed ? (
+          <>
+            <p className="text-sm text-gray-400">Confirmed word</p>
+            <p className="text-4xl font-bold text-green-400" aria-live="polite">
+              {confirmed}
+            </p>
+          </>
+        ) : result && result.decision === "accept" && result.label ? (
           <>
             <p className="text-sm text-gray-400">Recognised word</p>
             <p className="text-4xl font-bold text-green-400" aria-live="polite">
               {result.label}
             </p>
-            {result.decision === "confirm" && (
-              <p className="mt-1 text-sm text-amber-300">
-                Low confidence — please confirm or sign again.
-              </p>
-            )}
           </>
+        ) : result && result.decision === "confirm" ? (
+          <div aria-live="polite">
+            <p className="mb-2 text-sm text-amber-300">
+              Did you mean one of these? Tap the right word, or sign again.
+            </p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {result.candidates.map((c) => (
+                <button
+                  key={c.label}
+                  type="button"
+                  onClick={() => onConfirmChoice(c.label)}
+                  className="rounded-full bg-amber-600 px-4 py-2 font-semibold text-white hover:bg-amber-500 focus-visible:ring"
+                >
+                  {c.label}
+                  <span className="ml-2 text-xs opacity-80">
+                    {Math.round(c.p * 100)}%
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         ) : message ? (
           <p className="text-lg text-amber-300" aria-live="polite">
             {message}

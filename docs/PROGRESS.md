@@ -412,3 +412,52 @@ the trained checkpoints so the server serves the ensemble.
 > Gate-2 reminder (Section 1.6): the stratified split in `train.py` is fine for
 > the official-INCLUDE baseline, but the honest signer-independent number needs
 > a whole-signer hold-out — do that before quoting a generalisation figure.
+
+---
+
+## Phase 3 — Decision-engine UI + capture polish (code only)
+
+Scope done in this run: the web client now surfaces the decision engine's three
+outcomes, plus a lightweight pre-flight check. The accuracy still depends on a
+trained model (Phase 2 scripts, run on your machine), so no number changes here.
+
+### What was added
+
+- **Backend `POST /api/confirm` (Section 6.2):** records the user's tapped
+  candidate for a clip into a new SQLite `confirmations` table (a labelled
+  sample for later human review — Section 8.6, never auto-trained). Schemas +
+  router + storage method + 2 tests.
+- **Confirm UI (L10):** when `/api/recognize` returns `decision="confirm"`, the
+  capture screen shows the top-3 candidate chips with their probabilities; the
+  user taps one ("Did you mean …?"), which POSTs to `/api/confirm` and shows the
+  confirmed word. `accept` shows the word directly; `reject` shows a friendly
+  "sign again" reason.
+- **Pre-flight check (L2):** `web/src/components/PreflightCheck.jsx` samples the
+  raw webcam into a tiny canvas and shows green/amber lights for Camera /
+  Lighting / Motion before recording. It is live guidance only — hold-Space
+  push-to-sign always works regardless (R3), and the server runs the
+  authoritative quality gate (Section 5.3).
+
+### Verification run in this environment (real output)
+
+```text
+$ .\.venv\Scripts\python.exe -m pytest server/tests core/tests -q
+34 passed, 1 warning          # +2 confirm tests
+
+$ .\.venv\Scripts\python.exe -m ruff check server/
+All checks passed!
+
+$ cd web && npm run build
+vite v5.3.1 ... ✓ 88 modules transformed ... built            # exit 0
+```
+
+> Note: the `.venv` and `web/node_modules` are gitignored and were recreated
+> this session (they lived in the Phase-1 worktree that was removed after the
+> merge). Rebuild with `pip install -e .[dev]` and `cd web && npm install`.
+
+### Still pending for the real Gate 3 (needs a trained model + a human)
+
+Accepted-accuracy and coverage on a held-out recording set can only be measured
+once Phase 2 training has produced a model and signers have recorded clips.
+`tools/pick_thresholds.py` (writing decision thresholds from the validation
+risk-coverage curve) is still to be built in the Phase 3/4 boundary.

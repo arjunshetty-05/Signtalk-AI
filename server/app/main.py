@@ -30,7 +30,7 @@ from signtalk_core.config import load_config
 
 from server.app.storage import Storage
 from server.app.recognizer import load_bundle, load_detector
-from server.app.routers import health, vocab, recognize, enroll
+from server.app.routers import health, vocab, recognize, confirm, enroll
 
 logger = logging.getLogger("signtalk.server")
 
@@ -119,6 +119,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(vocab.router)
     app.include_router(recognize.router)
+    app.include_router(confirm.router)
     app.include_router(enroll.router)
 
     return app

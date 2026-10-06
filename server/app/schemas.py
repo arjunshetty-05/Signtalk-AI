@@ -65,6 +65,21 @@ class RecognizeResponse(BaseModel):
     latency_ms: LatencyMs
 
 
+class ConfirmRequest(BaseModel):
+    """POST /api/confirm body (Section 6.2): a user's tap on a candidate."""
+
+    clip_id: str
+    chosen_label: str
+
+
+class ConfirmResponse(BaseModel):
+    """POST /api/confirm response: acknowledgement of the stored sample."""
+
+    clip_id: str
+    chosen_label: str
+    stored: bool
+
+
 class VocabItem(BaseModel):
     """GET /api/vocab item (Section 6.6)."""
 
