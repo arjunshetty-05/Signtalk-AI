@@ -44,6 +44,9 @@ where = ["core"]
 include = ["signtalk_core*"]
 
 [tool.pytest.ini_options]
+# Put the worktree root on sys.path so the non-installed `server` package
+# imports in tests (the installed package is `signtalk_core` only).
+pythonpath = ["."]
 markers = [
     "unit: fast, isolated unit tests",
     "acceptance: full-pipeline regression guard (golden acceptance test)",

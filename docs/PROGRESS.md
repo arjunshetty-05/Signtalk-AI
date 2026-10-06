@@ -85,3 +85,78 @@ $ .\.venv\Scripts\python.exe -c "import mediapipe, torch; print(mediapipe.__vers
   belongs to Phase 1 and is not part of this feature.
 
 Everything above is a real command and its real output; nothing is invented.
+
+---
+
+## Gate 1 — Pose model + recognize_clip + FastAPI server (FEAT-003)
+
+Scope done in this run: tiny PyTorch pose model (`PoseGRU`), the
+`recognize_clip()` library function returning the exact Section 6.1 dict, and a
+FastAPI server (`/health`, `/api/vocab`, `/api/recognize`, and the Phase-1
+enrollment endpoints) backed by SQLite (guest mode, **no Firebase**). Contract
++ smoke tests included. Random-init model weights are acceptable for Gate 1
+(accuracy is irrelevant for the skeleton — Section 0.3); **no accuracy number is
+claimed.**
+
+### Server + core tests
+
+```text
+$ .\.venv\Scripts\python.exe -m pytest server/tests core/tests -q
+..................                                               [100%]
+18 passed, 1 warning in 2.36s
+```
+
+(5 server tests: health, vocab-count, recognize JSON contract, recognize bad
+JSON -> 422, enrollment start->clip->progress; plus the 13 FEAT-002 core tests.)
+
+### Live smoke test
+
+Port 8000 was already held by an unrelated local process, so the smoke server
+was bound to **127.0.0.1:8010** instead (my own uvicorn only; the other process
+was left untouched) and stopped afterward.
+
+```text
+$ .\.venv\Scripts\python.exe -m uvicorn server.app.main:app --host 127.0.0.1 --port 8010
+INFO:     Started server process [18080]
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8010 (Press CTRL+C to quit)
+
+$ Invoke-WebRequest http://127.0.0.1:8010/health
+{"status":"ok"}
+
+$ Invoke-RestMethod http://127.0.0.1:8010/api/vocab   # count=12
+[{"label":"hello","category":"greetings","demo":true},
+ {"label":"thank you","category":"greetings","demo":true}, ... 12 items]
+
+$ POST http://127.0.0.1:8010/api/recognize  (synthetic 24x solid-colour frames, fps=20)
+{
+  "clip_id": "00d5aeb2-e65b-4656-bd63-39d28a20e6f1",
+  "decision": "reject",
+  "label": null,
+  "candidates": [],
+  "confidence": 0.0,
+  "margin": 0.0,
+  "agreement": {"models": "1/1", "tta": "1/1"},
+  "reject_reason": "hands_not_visible",
+  "latency_ms": {"extract": 3, "models": 0, "fusion": 0, "total": 3}
+}
+```
+
+The synthetic no-hands clip returning `reject` / `hands_not_visible` is the
+**expected PASS**: the full Section 6.1 key set and value types are present and
+correct (context.json / FEAT-003 acceptance). No MediaPipe `.task` bundle is
+wired up in the skeleton, so `recognize_clip` runs in no-detector mode and every
+frame is treated as no-hands; the quality gate then rejects — the contract shape
+is what Gate 1 verifies, not accuracy. The server was stopped after the smoke
+test (port 8010 no longer listening).
+
+### What was NOT done in this slice
+
+- **No real inference accuracy.** Model weights are random-init; no training ran
+  and no MediaPipe model bundle was downloaded, so no recognition quality is
+  claimed.
+- **The web client (CaptureScreen / EnrollScreen)** and the Gate-1 manual
+  hold-Space acceptance belong to a later feature (web UI); not part of
+  FEAT-003.
+
+Everything above is a real command and its real output; nothing is invented.
