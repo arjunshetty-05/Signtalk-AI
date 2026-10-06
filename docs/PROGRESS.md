@@ -245,3 +245,89 @@ accuracy number.
   accuracy number is claimed.
 
 Everything above is a real command and its real output; nothing is invented.
+
+---
+
+## Convergence gate — cross-FEAT integration verification (Phase 0+1)
+
+Scope of this run: verify that the independently built FEATs (core features,
+pose model + `recognize_clip`, FastAPI server, web client) compose correctly end
+to end — no seam issues across import paths, config, or the core↔server schema.
+**No new feature code; this is a verification pass.** Model weights are still
+random-init and no MediaPipe `.task` bundle is wired up, so no accuracy is
+claimed (Section 0.3 / 0.7).
+
+### Core tests
+
+```text
+$ .\.venv\Scripts\python.exe -m pytest core/tests -q
+.............                                                            [100%]
+13 passed in 0.30s
+```
+
+### Server tests
+
+```text
+$ .\.venv\Scripts\python.exe -m pytest server/tests -q
+.....                                                                    [100%]
+5 passed, 1 warning in 2.46s
+```
+
+(Combined `core/tests server/tests` -> **18 passed, 1 warning**.)
+
+### Live server smoke test
+
+The server was started in-process via `uvicorn.Server` on **127.0.0.1:8099**
+(a background thread), exercised over real HTTP with the stdlib `urllib`
+client, and then stopped (`server.should_exit = True`). The `requests` package
+is intentionally **not** a project dependency, so stdlib HTTP was used rather
+than installing anything.
+
+```text
+$ .\.venv\Scripts\python.exe _smoke.py   # throwaway helper, removed after the run
+OK  /health 200 {'status': 'ok'}
+OK  /api/vocab 200 with 12 items
+OK  /api/recognize 200 decision=reject reject_reason=hands_not_visible keys=all-6.1-present
+SMOKE PASS
+```
+
+- `GET /health` -> 200, body `{"status": "ok"}`.
+- `GET /api/vocab` -> 200 with **exactly 12** items, each `{label, category, demo}`.
+- `POST /api/recognize` (synthetic 24× solid-colour base64 JPEG frames, fps=20)
+  -> 200 with the **complete Section 6.1 key set** present and no extra keys:
+  `clip_id, decision, label, candidates, confidence, margin, agreement,
+  reject_reason, latency_ms` (with `agreement = {models, tta}` and
+  `latency_ms = {extract, models, fusion, total}`). The no-hands synthetic clip
+  returning `reject` / `hands_not_visible` is the expected PASS — the contract
+  shape is what is verified, not accuracy.
+
+### Web build
+
+```text
+$ cd web && npm install
+up to date, audited 199 packages in 3s
+# EXIT=0
+
+$ npm run build
+> signtalk-ai-web@0.1.0 build
+> vite build
+vite v5.3.1 building for production...
+✓ 87 modules transformed.
+dist/index.html                   0.40 kB │ gzip:  0.27 kB
+dist/assets/index-DtZ9HyNv.css    9.70 kB │ gzip:  2.70 kB
+dist/assets/index-D1QbZXN4.js   189.38 kB │ gzip: 63.46 kB
+✓ built in 8.10s
+# EXIT=0
+```
+
+### Result
+
+**No cross-FEAT seam failures found.** All suites and gates passed on the first
+run: core↔server import paths resolve, `load_config()` + the shared app state
+wire up, the `recognize_clip` return dict matches the server's `RecognizeResponse`
+(Section 6.1) with no schema drift, `/api/vocab` reads `config/vocabulary.json`
+and returns 12 items, and the web client builds clean against the same contract.
+No source fixes were required, so no code was changed in this pass; only this
+log entry was added. The throwaway `_smoke.py` helper was deleted after use.
+
+Everything above is a real command and its real output; nothing is invented.
