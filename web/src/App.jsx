@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import CaptureScreen from "./screens/CaptureScreen.jsx";
 import EnrollScreen from "./screens/EnrollScreen.jsx";
+import CaptionsScreen from "./screens/CaptionsScreen.jsx";
 
 // Guest mode, no login wall (locked owner decision D3: no Firebase/auth). A
 // stable per-browser guest id is enough to tag decisions and enrollment clips.
@@ -33,6 +34,12 @@ export default function App() {
               Capture
             </TabButton>
             <TabButton
+              active={screen === "captions"}
+              onClick={() => setScreen("captions")}
+            >
+              Captions
+            </TabButton>
+            <TabButton
               active={screen === "enroll"}
               onClick={() => setScreen("enroll")}
             >
@@ -49,11 +56,9 @@ export default function App() {
       </p>
 
       <main className="px-4 py-6">
-        {screen === "capture" ? (
-          <CaptureScreen signerId={signerId} />
-        ) : (
-          <EnrollScreen signerId={signerId} />
-        )}
+        {screen === "capture" && <CaptureScreen signerId={signerId} />}
+        {screen === "captions" && <CaptionsScreen />}
+        {screen === "enroll" && <EnrollScreen signerId={signerId} />}
       </main>
     </div>
   );

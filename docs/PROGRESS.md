@@ -521,3 +521,66 @@ them. The remaining Gate-5 items are human/manual, not code:
 
 > Direction B (mic → Whisper captions over `/ws/speech`) is NOT built yet — it
 > is the remaining Phase-5 item and is lower priority than the sign→voice demo.
+
+---
+
+## Threshold tool (Gate 3 prep) + Direction B captions
+
+Two remaining code pieces built. Both are complete in code; the threshold tool
+produces real numbers only once you have a trained ensemble, and Direction B
+needs an optional Whisper install for real transcription.
+
+### Threshold selection (L10 / Section 5.7) — for Gate 3
+
+- **`core/signtalk_core/risk_coverage.py`** — pure function `pick_thresholds`:
+  given validation (fused_probs, labels), finds the loosest `t_accept` /
+  `m_accept` that give ZERO accepted errors at the highest coverage; falls back
+  (and flags `zero_error=False`) if no such threshold exists. Unit-tested.
+- **`tools/pick_thresholds.py`** — runs the trained ensemble over the validation
+  split, fuses exactly as serving does, calls `pick_thresholds`, writes a report
+  and (with `--write-config`) patches `decision.t_accept`/`m_accept` in
+  `config/signtalk.yaml`. **Run on validation only, never test (Section 1.6).**
+
+### Direction B — voice → live captions (Section 6.4)
+
+- **`server/app/routers/speech.py`** — `WS /ws/speech`: buffers audio chunks,
+  transcribes on `flush` with faster-whisper (preferred) or openai-whisper
+  (`WHISPER_MODEL` size), emits `{type:"transcript",text,is_final,lang}`.
+  **Degrades gracefully:** with no Whisper backend installed it sends one final
+  message saying STT is unavailable (browser dictation is the fallback).
+- **Web:** `useSpeechSocket` (MediaRecorder → WS) + `CaptionsScreen` (live
+  caption + conversation log + en/hi/kn hint) + a new "Captions" tab.
+
+### Verification run in this environment (real output)
+
+```text
+$ .\.venv\Scripts\python.exe -m pytest core/tests server/tests -q
+48 passed, 1 warning          # +4 (3 risk_coverage + 1 speech degradation)
+
+$ .\.venv\Scripts\python.exe -m ruff check core/ server/ training/ tools/
+All checks passed!
+
+$ cd web && npm run build
+vite v5.3.1 ... ✓ 92 modules transformed ... built            # exit 0
+```
+
+### To enable real transcription (optional, Direction B)
+
+Whisper is a heavy optional dependency and is NOT in the frozen lockfile. Install
+it into the venv when you want Direction B:
+
+```text
+.\.venv\Scripts\python.exe -m pip install faster-whisper
+```
+
+Then set `WHISPER_MODEL=small` (or base/tiny) in `.env`. Kannada STT is
+generally weaker — test ~20 sentences early (R7); the browser Web Speech API is
+the fallback.
+
+### Code status against the plan
+
+The sign→voice demo path and Direction B are now code-complete. Everything that
+remains is **data + manual verification, not code**: train on INCLUDE (Gate 2),
+record enrollment (Phase 4), run `tools/pick_thresholds.py` on the trained model
+(Gate 3), freeze the golden set and run `pytest -m acceptance` (Gate 4),
+native-speaker-verify hi/kn, and confirm hi/kn browser voices on the demo laptop.
