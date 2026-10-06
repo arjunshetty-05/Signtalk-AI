@@ -1,0 +1,4 @@
+{
+  "note": "Scripted sentence table (PROJECT_CONTEXT Section 5.10, preference 1). Maps a known word sequence to a pre-verified sentence in en/hi/kn (native-speaker verified before the demo). Deterministic, no LLM, no hallucination risk. Keys are space-joined word sequences. Empty for Phase 0.",
+  "sentences": {}
+}

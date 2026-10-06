@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "signtalk-core"
+version = "0.1.0"
+description = "SignTalk AI v3 — accuracy-first Indian Sign Language isolated-word recognition core (shared by training and serving)."
+requires-python = ">=3.11,<3.13"
+readme = "README.md"
+authors = [
+    { name = "Arjun B Shetty" },
+    { name = "Khushi Ramesh" },
+    { name = "Mahin S Kunder" },
+    { name = "Sathya Shriya G N" },
+]
+
+# Dependencies are intentionally pinned. The exact resolved versions are
+# frozen in requirements.txt (pip freeze) after a clean install so training and
+# serving share identical behaviour. Update both together.
+dependencies = [
+    "numpy==1.26.4",
+    "torch==2.2.2",
+    "onnx==1.16.1",
+    "onnxruntime==1.18.0",
+    "mediapipe==0.10.14",
+    "opencv-python==4.10.0.84",
+    "fastapi==0.111.0",
+    "uvicorn[standard]==0.30.1",
+    "pydantic==2.7.4",
+    "pyyaml==6.0.1",
+    "python-multipart==0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.2.2",
+    "ruff==0.4.10",
+    "black==24.4.2",
+]
+
+[tool.setuptools.packages.find]
+where = ["core"]
+include = ["signtalk_core*"]
+
+[tool.pytest.ini_options]
+markers = [
+    "unit: fast, isolated unit tests",
+    "acceptance: full-pipeline regression guard (golden acceptance test)",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

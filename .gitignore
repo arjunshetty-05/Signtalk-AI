@@ -2,6 +2,10 @@
 __pycache__/
 *.pyc
 venv/
+.venv/
+*.egg-info/
+build/
+dist/
 backend/_probe.py
 backend/data/
 backend/runs/
@@ -13,6 +17,8 @@ backend/models/*.tflite
 node_modules/
 frontend/dist/
 frontend/.env
+web/node_modules/
+web/dist/
 
 # Flutter
 mobile/.dart_tool/

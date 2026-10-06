@@ -1,0 +1,17 @@
+{
+  "note": "PLACEHOLDER vocabulary for the Phase-0/1 walking skeleton. These 12 signs were chosen to be visually distinct (L1); the final demo set is selected from data via tools/pick_vocabulary.py after a confusion-matrix analysis. Labels, categories and the set itself may change.",
+  "signs": [
+    { "label": "hello", "category": "greetings", "demo": true },
+    { "label": "thank you", "category": "greetings", "demo": true },
+    { "label": "help", "category": "needs", "demo": true },
+    { "label": "water", "category": "needs", "demo": true },
+    { "label": "pain", "category": "medical", "demo": true },
+    { "label": "yes", "category": "responses", "demo": true },
+    { "label": "no", "category": "responses", "demo": true },
+    { "label": "eat", "category": "needs", "demo": true },
+    { "label": "stop", "category": "commands", "demo": true },
+    { "label": "more", "category": "commands", "demo": true },
+    { "label": "name", "category": "social", "demo": true },
+    { "label": "please", "category": "social", "demo": true }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "note": "Context-prior / script-mode scenarios (PROJECT_CONTEXT Section 5.9 / L11). Each scenario lists the signs that can START it and, per sign, the plausible NEXT signs. Used only when config/signtalk.yaml context_prior.enabled is true; results must always be reported both with it off and on. Empty for Phase 0.",
+  "scenarios": []
+}

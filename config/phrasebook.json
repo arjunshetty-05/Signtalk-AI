@@ -1,0 +1,4 @@
+{
+  "note": "Offline phrasebook (PROJECT_CONTEXT Section 5.10 preference 3 / 5.11). Maps a single English word to its Hindi/Kannada translations for the template fallback when no scripted sentence or LLM is available. Native-speaker verified before the demo. Empty for Phase 0.",
+  "words": {}
+}
