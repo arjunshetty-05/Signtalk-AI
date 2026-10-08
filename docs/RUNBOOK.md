@@ -63,9 +63,11 @@ uses. Writes a `manifest.csv` logging every skipped/failed clip with a reason.
 ```powershell
 .\.venv\Scripts\python.exe training/prepare_include.py `
     --include-root data/raw/include `
-    --out-dir data/processed/include `
-    --model models/holistic_landmarker.task
+    --out-dir data/processed/include
 ```
+
+(The pose/hand bundles default to `models/pose_landmarker.task` and
+`models/hand_landmarker.task`; override with `--pose-model` / `--hand-model`.)
 
 **Done when:** `data/processed/include/features/<label>/*.npz` exist,
 `label_map.json` is written, and the console prints `ok=<N> failed/skipped=<M>`.

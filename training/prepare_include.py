@@ -108,13 +108,20 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Preprocess INCLUDE videos -> feature .npz")
     ap.add_argument("--include-root", required=True, type=Path)
     ap.add_argument("--out-dir", required=True, type=Path)
-    ap.add_argument("--model", required=True, type=Path, help="holistic_landmarker.task")
+    ap.add_argument(
+        "--pose-model", type=Path, default=Path("models/pose_landmarker.task"),
+        help="pose_landmarker.task bundle",
+    )
+    ap.add_argument(
+        "--hand-model", type=Path, default=Path("models/hand_landmarker.task"),
+        help="hand_landmarker.task bundle",
+    )
     ap.add_argument("--fps", type=float, default=30.0, help="assumed clip fps for quality")
     ap.add_argument("--vocab-only", action="store_true", help="keep only vocabulary labels")
     args = ap.parse_args(argv)
 
     cfg = load_config()
-    detector = create_holistic_detector(args.model)
+    detector = create_holistic_detector(args.pose_model, args.hand_model)
     keep = set(_vocab_labels()) if args.vocab_only else None
 
     clips = discover_clips(args.include_root)
