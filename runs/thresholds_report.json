@@ -1,0 +1,12 @@
+{
+  "t_accept": 0.5,
+  "m_accept": 0.0,
+  "coverage": 0.9394,
+  "accepted_accuracy": 1.0,
+  "n_accepted": 31,
+  "n_total": 33,
+  "zero_accepted_error": true,
+  "val_frac": 0.2,
+  "seed": 0,
+  "note": "Thresholds chosen on the VALIDATION split only (Section 1.6). Verify on the untouched TEST session before quoting a number. If zero_accepted_error is false, no threshold gave 0 wrong accepts \u2014 inspect the confusion matrix and drop confusable signs (L1)."
+}

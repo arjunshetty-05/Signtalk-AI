@@ -1,0 +1,11 @@
+{
+  "arch": "transformer",
+  "seed": 0,
+  "num_classes": 9,
+  "best_val_top1": 1.0,
+  "best_epoch": 40,
+  "train_clips": 135,
+  "val_clips": 33,
+  "train_seconds": 39.3,
+  "note": "stratified split \u2014 see Section 1.6; use session/signer hold-out for the honest number"
+}

@@ -1,0 +1,11 @@
+{
+  "arch": "gru",
+  "seed": 0,
+  "num_classes": 9,
+  "best_val_top1": 0.9393939393939394,
+  "best_epoch": 43,
+  "train_clips": 135,
+  "val_clips": 33,
+  "train_seconds": 39.0,
+  "note": "stratified split \u2014 see Section 1.6; use session/signer hold-out for the honest number"
+}
