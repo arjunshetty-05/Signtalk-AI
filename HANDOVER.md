@@ -182,6 +182,27 @@ Firebase), threshold tool. One real trained model (9 Greetings signs).
 
 ---
 
+## 8b. Known behaviour: live recognition is weak (domain gap)
+
+If every live sign comes back as the same word (we saw "How are you") or as
+"please sign again", that is **expected right now** and is NOT a model bug:
+
+- The model is **verified correct**: it predicts 18/18 right on the actual
+  INCLUDE training clips (any resolution/framing). The problem is purely that a
+  live webcam sign doesn't look like INCLUDE's deaf signers' gestures, so the
+  model gets an input unlike anything it trained on and falls back to a
+  low-confidence guess.
+- Thresholds are now set to **honest defaults** (`t_accept 0.85`, `m_accept
+  0.3`) so the system **abstains** ("please sign again") instead of speaking a
+  low-confidence wrong word. Earlier they were auto-set to 0.5/0.0 from a leaky
+  validation split, which accepted coin-flips.
+
+**The real fix is enrollment** (PROJECT_CONTEXT L7): record our own signers'
+clips for each sign and fine-tune. That closes the domain gap and is the single
+biggest accuracy lever. Until then, treat live recognition as a tech demo of the
+pipeline, not an accurate recogniser. To sanity-check that the model itself
+works, run the training-clip test in section 7 or feed a real INCLUDE `.MOV`.
+
 ## 9. Gotchas
 
 - **"Analysing…" forever** = usually a second/stale backend running. Kill extra
