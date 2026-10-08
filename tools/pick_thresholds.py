@@ -26,19 +26,30 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 import torch
 import yaml
 
-from signtalk_core.calibration import apply_temperature
-from signtalk_core.config import default_config_path
-from signtalk_core.fusion import fuse_probabilities
-from signtalk_core.models.pose_tcn import build_model
-from signtalk_core.models.pose_transformer import build_transformer
-from signtalk_core.risk_coverage import pick_thresholds
-from training.dataset import FeatureDataset, gather_items, load_label_map, stratified_split
+# Allow running as a plain script: ensure the repo root is importable.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from signtalk_core.calibration import apply_temperature  # noqa: E402
+from signtalk_core.config import default_config_path  # noqa: E402
+from signtalk_core.fusion import fuse_probabilities  # noqa: E402
+from signtalk_core.models.pose_tcn import build_model  # noqa: E402
+from signtalk_core.models.pose_transformer import build_transformer  # noqa: E402
+from signtalk_core.risk_coverage import pick_thresholds  # noqa: E402
+from training.dataset import (  # noqa: E402
+    FeatureDataset,
+    gather_items,
+    load_label_map,
+    stratified_split,
+)
 
 
 def _build_members(manifest: dict, device: str):

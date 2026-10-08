@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -30,9 +31,20 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from signtalk_core.models.pose_tcn import PoseGRU
-from signtalk_core.models.pose_transformer import PoseTransformer
-from training.dataset import FeatureDataset, gather_items, load_label_map, stratified_split
+# Allow running as a plain script (`python training/train.py`) as well as a
+# module (`python -m training.train`): ensure the repo root is importable.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from signtalk_core.models.pose_tcn import PoseGRU  # noqa: E402
+from signtalk_core.models.pose_transformer import PoseTransformer  # noqa: E402
+from training.dataset import (  # noqa: E402
+    FeatureDataset,
+    gather_items,
+    load_label_map,
+    stratified_split,
+)
 
 
 def build_arch(arch: str, num_classes: int) -> nn.Module:
