@@ -43,7 +43,23 @@ from signtalk_core.features import build_features
 from signtalk_core.landmarks import create_holistic_detector, extract_from_video
 from signtalk_core.quality import quality_check
 
+import re
+
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
+
+# INCLUDE sign folders are named like "48. Hello" / "55. Thank you": a number
+# prefix + the real label. Strip the "<n>. " prefix so the class label is the
+# clean sign name (e.g. "Hello"), matching what the app's vocabulary expects.
+_LABEL_PREFIX_RE = re.compile(r"^\s*\d+\.\s*")
+
+
+def clean_label(folder_name: str) -> str:
+    """Turn an INCLUDE sign folder name into a clean label.
+
+    "48. Hello" -> "Hello"; "55. Thank you" -> "Thank you". A folder with no
+    number prefix is returned trimmed and unchanged.
+    """
+    return _LABEL_PREFIX_RE.sub("", folder_name).strip()
 
 
 def _vocab_labels() -> list[str]:
@@ -56,13 +72,34 @@ def _vocab_labels() -> list[str]:
     return [s["label"] for s in signs]
 
 
+def _dir_has_videos(d: Path) -> bool:
+    """True if a directory directly contains at least one video file."""
+    return any(c.is_file() and c.suffix.lower() in VIDEO_EXTS for c in d.iterdir())
+
+
 def discover_clips(include_root: Path) -> list[tuple[str, Path]]:
-    """Return ``(label, video_path)`` for every video under one-folder-per-label."""
+    """Return ``(clean_label, video_path)`` for every INCLUDE clip found.
+
+    Robust to the real INCLUDE layout, which nests one level deeper than a flat
+    label tree:
+
+        <root>/<Category>/<NN. Sign>/<clip>.MOV      (e.g. Greetings/48. Hello/)
+        <root>/<NN. Sign>/<clip>.MOV                 (flat, also supported)
+
+    A "sign folder" is any directory that DIRECTLY contains video files; its
+    (prefix-stripped) name is the label. We walk the whole tree so category
+    wrappers, Adults/Kids subfolders, etc. are all handled, and clips from
+    folders that clean to the same label are merged.
+    """
     clips: list[tuple[str, Path]] = []
-    for label_dir in sorted(p for p in include_root.iterdir() if p.is_dir()):
-        label = label_dir.name
-        for vid in sorted(label_dir.iterdir()):
-            if vid.suffix.lower() in VIDEO_EXTS:
+    for d in sorted(p for p in include_root.rglob("*") if p.is_dir()):
+        if not _dir_has_videos(d):
+            continue
+        label = clean_label(d.name)
+        if not label:
+            continue
+        for vid in sorted(d.iterdir()):
+            if vid.is_file() and vid.suffix.lower() in VIDEO_EXTS:
                 clips.append((label, vid))
     return clips
 
