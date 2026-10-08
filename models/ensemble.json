@@ -1,0 +1,17 @@
+{
+  "labels": [
+    "Alright",
+    "Good Morning",
+    "Good afternoon",
+    "Good evening",
+    "Good night",
+    "Hello",
+    "How are you",
+    "Pleased",
+    "Thank you"
+  ],
+  "members": [
+    { "arch": "gru",         "checkpoint": "runs/m1_gru/best.pt", "temperature": 1.0, "weight": 0.5 },
+    { "arch": "transformer", "checkpoint": "runs/m2_tf/best.pt",  "temperature": 1.0, "weight": 0.5 }
+  ]
+}
