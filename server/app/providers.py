@@ -49,8 +49,19 @@ def _extract_json(text: str) -> dict | None:
         return None
 
 
+_GEMINI_ENDPOINT = (
+    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+)
+
+
 class GeminiProvider:
-    """Gemini sentence provider: one strict-JSON call with a timeout + 1 retry."""
+    """Gemini sentence provider via the REST API (no heavy SDK).
+
+    Uses the ``generativelanguage`` REST endpoint directly with ``requests``
+    (already a dependency), avoiding the deprecated ``google-generativeai`` SDK
+    and its protobuf>=5 dependency, which conflicts with MediaPipe (protobuf<5).
+    One strict-JSON call with a timeout and one retry (Section 5.10).
+    """
 
     def __init__(self, api_key: str, model: str, timeout_s: float) -> None:
         self._api_key = api_key
@@ -59,24 +70,27 @@ class GeminiProvider:
 
     def compose(self, words, history, scenario_id):  # noqa: ANN001
         """Return the parsed JSON dict, or None on any failure (-> fallback)."""
-        try:
-            import google.generativeai as genai
-        except ImportError:
-            logger.warning("google-generativeai not installed; LLM disabled")
-            return None
+        import requests
 
-        genai.configure(api_key=self._api_key)
-        model = genai.GenerativeModel(self._model_name)
         prompt = _PROMPT.format(words=", ".join(words), history=" | ".join(history or []))
+        url = _GEMINI_ENDPOINT.format(model=self._model_name)
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"response_mime_type": "application/json"},
+        }
+        headers = {"x-goog-api-key": self._api_key, "Content-Type": "application/json"}
 
         for attempt in (1, 2):  # one retry (Section 5.10)
             try:
-                resp = model.generate_content(
-                    prompt,
-                    request_options={"timeout": self._timeout_s},
-                    generation_config={"response_mime_type": "application/json"},
+                resp = requests.post(
+                    url, json=payload, headers=headers, timeout=self._timeout_s
                 )
-                parsed = _extract_json(resp.text or "")
+                resp.raise_for_status()
+                data = resp.json()
+                text = (
+                    data["candidates"][0]["content"]["parts"][0]["text"]
+                )
+                parsed = _extract_json(text or "")
                 if parsed is not None:
                     return parsed
             except Exception as exc:  # noqa: BLE001
