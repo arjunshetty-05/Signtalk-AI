@@ -1,17 +1,14 @@
 {
-  "note": "PLACEHOLDER vocabulary for the Phase-0/1 walking skeleton. These 12 signs were chosen to be visually distinct (L1); the final demo set is selected from data via tools/pick_vocabulary.py after a confusion-matrix analysis. Labels, categories and the set itself may change.",
+  "note": "Vocabulary matching the trained model (INCLUDE Greetings category, 9 signs). Order MUST match the class-index order in the trained label_map.json / models/ensemble.json. Add more categories by re-running prepare_include.py + train.py and extending this list in label-index order.",
   "signs": [
-    { "label": "hello", "category": "greetings", "demo": true },
-    { "label": "thank you", "category": "greetings", "demo": true },
-    { "label": "help", "category": "needs", "demo": true },
-    { "label": "water", "category": "needs", "demo": true },
-    { "label": "pain", "category": "medical", "demo": true },
-    { "label": "yes", "category": "responses", "demo": true },
-    { "label": "no", "category": "responses", "demo": true },
-    { "label": "eat", "category": "needs", "demo": true },
-    { "label": "stop", "category": "commands", "demo": true },
-    { "label": "more", "category": "commands", "demo": true },
-    { "label": "name", "category": "social", "demo": true },
-    { "label": "please", "category": "social", "demo": true }
+    { "label": "Alright", "category": "greetings", "demo": true },
+    { "label": "Good Morning", "category": "greetings", "demo": true },
+    { "label": "Good afternoon", "category": "greetings", "demo": true },
+    { "label": "Good evening", "category": "greetings", "demo": true },
+    { "label": "Good night", "category": "greetings", "demo": true },
+    { "label": "Hello", "category": "greetings", "demo": true },
+    { "label": "How are you", "category": "greetings", "demo": true },
+    { "label": "Pleased", "category": "greetings", "demo": true },
+    { "label": "Thank you", "category": "greetings", "demo": true }
   ]
 }

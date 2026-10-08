@@ -17,8 +17,8 @@ def test_compose_scripted(client: TestClient) -> None:
 
 
 def test_compose_template_fallback(client: TestClient) -> None:
-    # Unknown sequence, default LLM_PROVIDER=none -> template.
-    resp = client.post("/api/compose", json={"words": ["water", "more"]})
+    # A sequence that is NOT in the scripted table, with no LLM key -> template.
+    resp = client.post("/api/compose", json={"words": ["zzxx", "qqww"]})
     assert resp.status_code == 200
     body = resp.json()
     assert body["source"] == "template"

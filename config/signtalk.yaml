@@ -1,37 +1,26 @@
-# SignTalk AI v3 — single source of truth for every tunable (Section 6.9 / 13).
-# No magic numbers anywhere else in the codebase: callers read these values via
-# signtalk_core.config. The values below are the Section 13 PLACEHOLDER starting
-# values. The decision thresholds in particular are placeholders that
-# tools/pick_thresholds.py replaces with values computed from validation data
-# (never tune thresholds on test data — see PROJECT_CONTEXT Section 1.6 / L10).
-
-sequence_length: 32          # pose models: resample each clip to T frames
-rgb_frames: 16               # RGB-crop branch (M3) sampling (M3 skipped for now)
-smoothing_window: 3          # moving-average window applied before resampling
-
+sequence_length: 32
+rgb_frames: 16
+smoothing_window: 3
 quality:
-  min_hands_visible_pct: 0.7 # min fraction of frames with hands visible
-  min_seconds: 0.4           # reject clips shorter than this
-  max_seconds: 5.0           # reject clips longer than this
-
+  min_hands_visible_pct: 0.7
+  min_seconds: 0.4
+  max_seconds: 5.0
 tta:
-  views: 5                   # test-time augmentation views per clip
-  trim_frames: [0, 3, 6]     # temporal trims (frames) at each end
-
-# PLACEHOLDER decision thresholds — replaced later by tools/pick_thresholds.py
-# from the validation risk-coverage curve.
+  views: 5
+  trim_frames:
+  - 0
+  - 3
+  - 6
 decision:
-  t_accept: 0.85             # min fused top-1 probability to auto-accept
-  m_accept: 0.30             # min margin (top1 - top2) to auto-accept
-  min_model_agreement: all   # 'all' models must agree on top-1 (or k-of-n)
-  tta_agreement: 0.8         # min fraction of TTA views agreeing
-  t_confirm: 0.40            # min top-1 to offer a confirm (top-3) prompt
-
+  t_accept: 0.5
+  m_accept: 0.0
+  min_model_agreement: all
+  tta_agreement: 0.8
+  t_confirm: 0.4
 sentence:
-  idle_seconds: 2.5          # flush the sentence buffer after this idle gap
-  max_words: 8               # flush after this many words
-  mode: strict               # strict = user confirms before speaking | fast
-
+  idle_seconds: 2.5
+  max_words: 8
+  mode: strict
 context_prior:
-  enabled: false             # L11 context/script prior; off by default
-  scenario: null             # active scenario id when enabled
+  enabled: false
+  scenario: null
