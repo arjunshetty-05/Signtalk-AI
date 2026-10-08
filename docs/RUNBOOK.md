@@ -43,9 +43,11 @@ CPU also works (slower). Not a blocker.
 
 ---
 
-## Step 2 — MediaPipe bundle (already done)
+## Step 2 — MediaPipe bundles (already done)
 
-`models/holistic_landmarker.task` is already downloaded. If it ever goes missing:
+`models/pose_landmarker.task` and `models/hand_landmarker.task` are downloaded.
+(We use the SEPARATE Pose + Hand tasks — the combined Holistic task crashes
+mid-video on mediapipe 0.10.14 / Windows.) If they ever go missing:
 
 ```powershell
 .\.venv\Scripts\python.exe tools/download_mediapipe_bundle.py

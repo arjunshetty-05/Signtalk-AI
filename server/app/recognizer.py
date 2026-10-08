@@ -40,18 +40,25 @@ logger = logging.getLogger("signtalk.server.recognizer")
 
 
 def load_detector() -> Any | None:
-    """Create the MediaPipe holistic detector if a bundle path is configured."""
-    model_path = os.environ.get("HOLISTIC_MODEL_PATH")
-    if not model_path:
-        logger.info("no HOLISTIC_MODEL_PATH set -> running without a detector (skeleton mode)")
-        return None
-    if not Path(model_path).is_file():
-        logger.warning("HOLISTIC_MODEL_PATH=%s does not exist -> no detector", model_path)
+    """Create the MediaPipe Pose+Hand detector if both bundles are present.
+
+    Paths come from ``POSE_MODEL_PATH`` / ``HAND_MODEL_PATH`` (defaulting to
+    ``models/pose_landmarker.task`` and ``models/hand_landmarker.task``). If
+    either is missing, returns None and the server runs in skeleton mode.
+    """
+    pose_path = os.environ.get("POSE_MODEL_PATH", "models/pose_landmarker.task")
+    hand_path = os.environ.get("HAND_MODEL_PATH", "models/hand_landmarker.task")
+    if not (Path(pose_path).is_file() and Path(hand_path).is_file()):
+        logger.info(
+            "pose/hand bundles not found (%s, %s) -> no detector (skeleton mode)",
+            pose_path,
+            hand_path,
+        )
         return None
     from signtalk_core.landmarks import create_holistic_detector
 
-    logger.info("loading MediaPipe holistic detector from %s", model_path)
-    return create_holistic_detector(model_path)
+    logger.info("loading MediaPipe Pose+Hand detector from %s + %s", pose_path, hand_path)
+    return create_holistic_detector(pose_path, hand_path)
 
 
 def load_bundle() -> Any | None:

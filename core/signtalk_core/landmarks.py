@@ -66,14 +66,18 @@ class FrameLandmarks:
 
 
 class HolisticDetector(Protocol):
-    """Minimal structural interface for a per-frame holistic detector.
+    """Minimal structural interface for a per-frame landmark detector.
 
-    MediaPipe's ``HolisticLandmarker`` satisfies this via its ``detect`` method.
-    Declaring it as a Protocol lets callers (and tests) inject a fake detector
-    without importing MediaPipe or downloading a model bundle.
+    Implemented by :class:`DualLandmarker` (separate MediaPipe Pose + Hand
+    tasks). Declaring it as a Protocol lets callers (and tests) inject a fake
+    detector without importing MediaPipe or downloading a model bundle.
+
+    NOTE: we use the SEPARATE Pose + Hand landmarker tasks, not the combined
+    ``HolisticLandmarker`` task — the latter crashes mid-video on mediapipe
+    0.10.14 / Windows ("Check failed: holder_ != nullptr The packet is empty").
     """
 
-    def detect(self, image: "object") -> "object":  # pragma: no cover - protocol
+    def detect_frame(self, frame_bgr: "object") -> "FrameLandmarks":  # pragma: no cover
         ...
 
 
@@ -145,80 +149,122 @@ def _landmarks_to_xy(landmark_list, count: int) -> np.ndarray:
     return out
 
 
-def _mp_result_to_frame(result) -> FrameLandmarks:
-    """Translate a HolisticLandmarkerResult into a :class:`FrameLandmarks`."""
-    pose = getattr(result, "pose_landmarks", None)
-    if pose:
-        full_pose = _landmarks_to_xy(pose, 33)
-        pose_subset = full_pose[list(POSE_SUBSET_INDICES)].astype(np.float32)
-    else:
-        pose_subset = np.zeros((NUM_POSE_SUBSET, 2), dtype=np.float32)
+class DualLandmarker:
+    """A per-frame detector backed by SEPARATE Pose + Hand MediaPipe tasks.
 
-    left_raw = getattr(result, "left_hand_landmarks", None)
-    right_raw = getattr(result, "right_hand_landmarks", None)
-    left_hand = _landmarks_to_xy(left_raw, NUM_HAND_LANDMARKS) if left_raw else None
-    right_hand = _landmarks_to_xy(right_raw, NUM_HAND_LANDMARKS) if right_raw else None
+    Replaces the combined ``HolisticLandmarker`` (which crashes mid-video on
+    mediapipe 0.10.14 / Windows). Runs the stable ``PoseLandmarker`` and
+    ``HandLandmarker`` tasks per frame and merges their outputs into the same
+    :class:`FrameLandmarks` structure the rest of the pipeline expects, so no
+    downstream code changes.
 
-    return FrameLandmarks(
-        pose_subset=pose_subset,
-        left_hand=left_hand,
-        right_hand=right_hand,
-        left_hand_present=left_hand is not None,
-        right_hand_present=right_hand is not None,
-    )
+    The two hands returned by HandLandmarker are placed into the ``left_hand`` /
+    ``right_hand`` transport channels by image-x order (leftmost wrist -> left
+    channel); the accuracy-critical handedness decision still happens by body
+    midline in :mod:`signtalk_core.features`.
+    """
+
+    def __init__(self, pose_landmarker, hand_landmarker) -> None:
+        self._pose = pose_landmarker
+        self._hand = hand_landmarker
+
+    def detect_frame(self, frame_bgr: np.ndarray) -> FrameLandmarks:
+        """Extract pose subset + up to two hands from one BGR frame."""
+        import mediapipe as mp
+
+        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+
+        pose_res = self._pose.detect(image)
+        hand_res = self._hand.detect(image)
+
+        # Pose subset (zeros if no person detected this frame).
+        if pose_res.pose_landmarks:
+            full_pose = _landmarks_to_xy(pose_res.pose_landmarks[0], 33)
+            pose_subset = full_pose[list(POSE_SUBSET_INDICES)].astype(np.float32)
+        else:
+            pose_subset = np.zeros((NUM_POSE_SUBSET, 2), dtype=np.float32)
+
+        # Hands: order the (up to 2) detected hands by wrist x -> left/right
+        # transport channels. MediaPipe's own Left/Right label is ignored.
+        hands = [
+            _landmarks_to_xy(h, NUM_HAND_LANDMARKS) for h in hand_res.hand_landmarks
+        ]
+        left_hand = right_hand = None
+        if len(hands) == 1:
+            left_hand = hands[0]
+        elif len(hands) >= 2:
+            hands.sort(key=lambda h: float(h[0, 0]))  # by wrist (landmark 0) x
+            left_hand, right_hand = hands[0], hands[1]
+
+        return FrameLandmarks(
+            pose_subset=pose_subset,
+            left_hand=left_hand,
+            right_hand=right_hand,
+            left_hand_present=left_hand is not None,
+            right_hand_present=right_hand is not None,
+        )
 
 
 def extract_landmarks(
     frames_bgr: list[np.ndarray],
     detector: HolisticDetector,
 ) -> list[FrameLandmarks]:
-    """Run the holistic detector over a list of BGR frames.
+    """Run the detector over a list of BGR frames.
 
     Args:
         frames_bgr: BGR ``uint8`` frames (e.g. from :func:`read_video_frames`
             or :func:`decode_base64_jpeg`).
-        detector: a MediaPipe ``HolisticLandmarker`` (or any object with a
-            ``detect(mp.Image) -> HolisticLandmarkerResult`` method).
+        detector: a :class:`DualLandmarker` (or any object with a
+            ``detect_frame(frame_bgr) -> FrameLandmarks`` method).
 
     Returns:
         One :class:`FrameLandmarks` per input frame, in order.
     """
-    import mediapipe as mp  # local import: keep MediaPipe optional for pure tests
-
-    out: list[FrameLandmarks] = []
-    for frame_bgr in frames_bgr:
-        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        result = detector.detect(mp_image)
-        out.append(_mp_result_to_frame(result))
-    return out
+    return [detector.detect_frame(frame_bgr) for frame_bgr in frames_bgr]
 
 
-def create_holistic_detector(model_path: str | Path):
-    """Create a MediaPipe Tasks ``HolisticLandmarker`` in IMAGE mode.
+def create_holistic_detector(
+    pose_model_path: str | Path = "models/pose_landmarker.task",
+    hand_model_path: str | Path = "models/hand_landmarker.task",
+) -> DualLandmarker:
+    """Create a :class:`DualLandmarker` from the Pose + Hand task bundles.
 
     Args:
-        model_path: path to the ``holistic_landmarker.task`` model bundle.
-            (Downloaded out-of-band by serving/training setup; not fetched here.)
+        pose_model_path: path to ``pose_landmarker.task``.
+        hand_model_path: path to ``hand_landmarker.task``.
+        (Both downloaded by ``tools/download_mediapipe_bundle.py``.)
 
     Returns:
-        A configured ``HolisticLandmarker`` ready for per-frame ``detect`` calls.
+        A :class:`DualLandmarker` ready for per-frame ``detect_frame`` calls.
 
     Raises:
-        FileNotFoundError: if the model bundle is missing.
+        FileNotFoundError: if either bundle is missing.
     """
-    model_path = Path(model_path)
-    if not model_path.is_file():
-        raise FileNotFoundError(f"Holistic model bundle not found: {model_path}")
+    pose_path = Path(pose_model_path)
+    hand_path = Path(hand_model_path)
+    if not pose_path.is_file():
+        raise FileNotFoundError(f"Pose model bundle not found: {pose_path}")
+    if not hand_path.is_file():
+        raise FileNotFoundError(f"Hand model bundle not found: {hand_path}")
 
     from mediapipe.tasks.python import vision
     from mediapipe.tasks.python.core.base_options import BaseOptions
 
-    options = vision.HolisticLandmarkerOptions(
-        base_options=BaseOptions(model_asset_path=str(model_path)),
-        running_mode=vision.RunningMode.IMAGE,
+    pose = vision.PoseLandmarker.create_from_options(
+        vision.PoseLandmarkerOptions(
+            base_options=BaseOptions(model_asset_path=str(pose_path)),
+            running_mode=vision.RunningMode.IMAGE,
+        )
     )
-    return vision.HolisticLandmarker.create_from_options(options)
+    hand = vision.HandLandmarker.create_from_options(
+        vision.HandLandmarkerOptions(
+            base_options=BaseOptions(model_asset_path=str(hand_path)),
+            running_mode=vision.RunningMode.IMAGE,
+            num_hands=2,
+        )
+    )
+    return DualLandmarker(pose, hand)
 
 
 def extract_from_base64_frames(
