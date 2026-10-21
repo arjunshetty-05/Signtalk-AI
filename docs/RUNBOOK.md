@@ -141,6 +141,37 @@ number. If it prints `false`, two signs are confusable — note it; later drop o
 
 ---
 
+## Step 6.5 — Evaluate the ensemble (Gate 6)
+
+Produce the paper-grade metric set and the `docs/EVALUATION.md` asset: top-1 /
+top-5, macro-F1, a per-class precision/recall/F1 table, the confusion matrix,
+and the decision-layer coverage + accepted-accuracy at the configured
+thresholds. Uses the SAME calibrate→fuse path as serving, so the numbers match
+what the running system produces.
+
+```powershell
+.\.venv\Scripts\python.exe tools/evaluate.py `
+    --processed-dir data/processed/include `
+    --manifest models/ensemble.json `
+    --split stratified --val-frac 0.2 --seed 0 `
+    --report runs/evaluation.json --markdown docs/EVALUATION.md
+```
+
+**Done when:** `runs/evaluation.json` and `docs/EVALUATION.md` are written and
+print the overall top-1/top-5/macro-F1.
+
+> ⚠️ **Honest split (Section 1.6):** `--split stratified` is a random split that
+> likely shares a signer across train and val — a *pipeline-validation* number,
+> NOT a defensible generalisation figure, and the tool labels it as such. For
+> the real number, point `--processed-dir` at the official INCLUDE **test**
+> split (or an enrolled session/signer hold-out) and pass `--split official`,
+> which evaluates every clip in that dir as-is with no mixing.
+>
+> **Open-set check (Section 9.5):** add `--unknown-dir <processed-dir-of-OOV-clips>`
+> to measure how many out-of-vocabulary clips get wrongly *accepted* (target: 0).
+
+---
+
 ## Step 7 — Serve the trained model
 
 Point the server at the ensemble and run it. In `.env`, uncomment:

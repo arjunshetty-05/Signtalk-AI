@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getVocab, enrollStart, enrollClip, enrollProgress } from "../api.js";
 import VideoPreview from "../components/VideoPreview.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
+import GlassButton from "../components/GlassButton.jsx";
 
 // Target number of repetitions to record per sign during enrollment.
 const TARGET_REPS = 5;
@@ -170,99 +171,130 @@ export default function EnrollScreen({ signerId }) {
     };
   }, [startRecording, stopAndUpload]);
 
+  const pct = Math.min(100, Math.round((recordedCount / TARGET_REPS) * 100));
+
   return (
     <section className="mx-auto max-w-xl">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-bold">Enrollment</h2>
-        <StatusBadge state={state} />
-      </div>
-
-      {camError && (
-        <p className="mb-4 rounded bg-red-900 p-3 text-red-100" role="alert">
-          {camError}
-        </p>
-      )}
-
-      <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className="mb-1 block text-sm text-gray-300" htmlFor="signer">
-            Signer
-          </label>
-          <input
-            id="signer"
-            value={signerId}
-            readOnly
-            className="w-full rounded bg-gray-800 px-3 py-2 text-gray-100"
-          />
+      <div className="glass p-5 sm:p-6">
+        <div className="mb-4 flex items-center justify-end">
+          <StatusBadge state={state} />
         </div>
-        <div>
-          <label className="mb-1 block text-sm text-gray-300" htmlFor="sign">
-            Sign to record
-          </label>
-          <select
-            id="sign"
-            value={sign}
-            onChange={(e) => setSign(e.target.value)}
-            className="w-full rounded bg-gray-800 px-3 py-2 text-gray-100"
+
+        {camError && (
+          <p
+            className="mb-4 rounded-xl border border-red-400/30 bg-red-500/15 p-3 text-red-100"
+            role="alert"
           >
-            {vocab.map((v) => (
-              <option key={v.label} value={v.label}>
-                {v.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="mb-4 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={startSession}
-          className="rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-500 focus-visible:ring"
-        >
-          {sessionId ? "Restart session" : "Start session"}
-        </button>
-        <span className="text-sm text-gray-300" aria-live="polite">
-          Reps for "{sign}": <strong>{recordedCount}</strong> / {TARGET_REPS}
-        </span>
-      </div>
-
-      <VideoPreview videoRef={videoRef} mirrored recording={state === "recording"} />
-
-      <div className="mt-4">
-        <button
-          type="button"
-          disabled={!sessionId}
-          onMouseDown={startRecording}
-          onMouseUp={stopAndUpload}
-          onMouseLeave={() => state === "recording" && stopAndUpload()}
-          onTouchStart={(e) => {
-            e.preventDefault();
-            startRecording();
-          }}
-          onTouchEnd={(e) => {
-            e.preventDefault();
-            stopAndUpload();
-          }}
-          className="w-full rounded-lg bg-blue-600 px-4 py-4 text-lg font-semibold text-white hover:bg-blue-500 focus-visible:ring disabled:opacity-50"
-        >
-          Hold <kbd className="rounded bg-black/40 px-2">Space</kbd> (or this button) to record a rep
-        </button>
-      </div>
-
-      <div className="mt-4 min-h-[3rem] rounded-lg border border-gray-700 p-3 text-center">
-        {state === "analysing" ? (
-          <p className="text-amber-300" aria-live="polite">
-            Saving clip…
-          </p>
-        ) : (
-          <p className="text-gray-300" aria-live="polite">
-            {message ||
-              (recordedCount >= TARGET_REPS
-                ? `Done — ${recordedCount} reps recorded for "${sign}".`
-                : "Record each rep by holding Space.")}
+            {camError}
           </p>
         )}
+
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <div>
+            <label
+              className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400"
+              htmlFor="signer"
+            >
+              Signer
+            </label>
+            <input
+              id="signer"
+              value={signerId}
+              readOnly
+              className="w-full rounded-xl border border-white/10 bg-ink-900/60 px-3 py-2 text-slate-200 focus-visible:ring"
+            />
+          </div>
+          <div>
+            <label
+              className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400"
+              htmlFor="sign"
+            >
+              Sign to record
+            </label>
+            <select
+              id="sign"
+              value={sign}
+              onChange={(e) => setSign(e.target.value)}
+              className="w-full rounded-xl border border-white/10 bg-ink-900/60 px-3 py-2 text-slate-100 focus-visible:ring"
+            >
+              {vocab.map((v) => (
+                <option key={v.label} value={v.label}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <GlassButton variant="brand" onClick={startSession}>
+            {sessionId ? "Restart session" : "Start session"}
+          </GlassButton>
+          <span className="text-sm text-slate-300" aria-live="polite">
+            Reps for &ldquo;{sign}&rdquo;: <strong>{recordedCount}</strong> /{" "}
+            {TARGET_REPS}
+          </span>
+        </div>
+
+        {/* Rep progress bar. */}
+        <div className="mb-4">
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full bg-brand-500 transition-all duration-500 ease-out"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </div>
+
+        <VideoPreview videoRef={videoRef} mirrored recording={state === "recording"} />
+
+        <div className="mt-4">
+          <GlassButton
+            variant={state === "recording" ? "danger" : "brand"}
+            disabled={!sessionId}
+            onMouseDown={startRecording}
+            onMouseUp={stopAndUpload}
+            onMouseLeave={() => state === "recording" && stopAndUpload()}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              startRecording();
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              stopAndUpload();
+            }}
+            className={`w-full !rounded-2xl px-4 py-4 text-lg ${
+              state === "recording" ? "animate-pulse-ring" : ""
+            }`}
+          >
+            {state === "recording" ? (
+              "Recording rep… release to save"
+            ) : (
+              <>
+                Hold{" "}
+                <kbd className="rounded-md border border-white/20 bg-white/10 px-2 py-0.5 text-sm">
+                  Space
+                </kbd>{" "}
+                (or this button) to record a rep
+              </>
+            )}
+          </GlassButton>
+        </div>
+
+        <div className="mt-4 min-h-[3rem] rounded-xl border border-white/10 bg-ink-900/50 p-3 text-center">
+          {state === "analysing" ? (
+            <p className="font-semibold shimmer-text" aria-live="polite">
+              Saving clip…
+            </p>
+          ) : (
+            <p className="text-slate-300" aria-live="polite">
+              {message ||
+                (recordedCount >= TARGET_REPS
+                  ? `Done — ${recordedCount} reps recorded for "${sign}".`
+                  : "Record each rep by holding Space.")}
+            </p>
+          )}
+        </div>
       </div>
     </section>
   );

@@ -94,14 +94,21 @@ export default function PreflightCheck({ videoRef, ready, onReadyChange }) {
 
 /** A single green/amber pre-flight indicator. `soft` = advisory, not blocking. */
 function Light({ ok, label, soft = false }) {
-  const color = ok
-    ? "bg-green-600 text-green-50"
+  const shell = ok
+    ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-100"
     : soft
-      ? "bg-gray-700 text-gray-300"
-      : "bg-amber-700 text-amber-50";
+      ? "border-white/10 bg-white/5 text-slate-300"
+      : "border-amber-400/40 bg-amber-400/15 text-amber-100";
+  const dot = ok
+    ? "bg-emerald-400 shadow-[0_0_10px_2px_rgba(52,211,153,0.7)]"
+    : soft
+      ? "bg-slate-500"
+      : "bg-amber-400 shadow-[0_0_10px_2px_rgba(251,191,36,0.6)]";
   return (
-    <div className={`flex items-center gap-2 rounded px-2 py-1 ${color}`}>
-      <span aria-hidden="true">{ok ? "●" : "○"}</span>
+    <div
+      className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 font-medium backdrop-blur-md transition-colors duration-300 ${shell}`}
+    >
+      <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${dot}`} />
       <span>{label}</span>
     </div>
   );

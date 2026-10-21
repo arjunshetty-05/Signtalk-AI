@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { composeSentence } from "../api.js";
 import { useSpeech } from "../hooks/useSpeech.js";
+import GlassButton from "./GlassButton.jsx";
 
 // Sentence buffer (PROJECT_CONTEXT 5.10): collect accepted/confirmed words,
 // then compose + speak. Flush triggers: idle gap, max words, or "Finish".
@@ -61,18 +62,30 @@ export default function SentenceBox({ words, onClear }) {
   const sentence = composed?.sentences?.[lang] || "";
 
   return (
-    <section className="mt-8 rounded-lg border border-gray-700 p-4" aria-label="Sentence">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="font-bold">Sentence</h3>
-        <div className="flex gap-1" role="group" aria-label="Language">
+    <section
+      className="mt-6 rounded-xl border border-white/8 bg-white/[0.02] p-5"
+      aria-label="Sentence"
+    >
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 text-base font-semibold">
+          <span className="h-4 w-1 rounded-full bg-brand-500" />
+          Sentence
+        </h3>
+        <div
+          className="flex gap-1 rounded-xl border border-white/10 bg-white/5 p-1"
+          role="group"
+          aria-label="Language"
+        >
           {APP_LANGS.map((l) => (
             <button
               key={l.code}
               type="button"
               onClick={() => setLang(l.code)}
               aria-pressed={lang === l.code}
-              className={`rounded px-3 py-1 text-sm ${
-                lang === l.code ? "bg-blue-600 text-white" : "bg-gray-700 text-gray-200"
+              className={`rounded-lg px-3 py-1 text-sm font-medium transition-colors duration-200 ${
+                lang === l.code
+                  ? "bg-brand-600 text-white"
+                  : "text-slate-400 hover:text-white"
               }`}
             >
               {l.label}
@@ -82,15 +95,19 @@ export default function SentenceBox({ words, onClear }) {
       </div>
 
       {/* Running word chips */}
-      <div className="mb-3 flex min-h-[2rem] flex-wrap gap-2">
+      <div className="mb-4 flex min-h-[2rem] flex-wrap gap-2">
         {words.length ? (
           words.map((w, i) => (
-            <span key={`${w}-${i}`} className="rounded-full bg-gray-700 px-3 py-1 text-sm">
+            <span
+              key={`${w}-${i}`}
+              style={{ animationDelay: `${i * 50}ms` }}
+              className="animate-pop-in rounded-full border border-brand-400/30 bg-brand-500/15 px-3 py-1 text-sm font-medium text-brand-100"
+            >
               {w}
             </span>
           ))
         ) : (
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-slate-500">
             Accepted words collect here, then become a sentence.
           </span>
         )}
@@ -102,46 +119,47 @@ export default function SentenceBox({ words, onClear }) {
         aria-live="polite"
         lang={lang}
       >
-        {composing ? "…" : sentence}
+        {composing ? <span className="shimmer-text">Composing…</span> : sentence}
       </p>
       {composed && (
-        <p className="mt-1 text-xs text-gray-400">
+        <p className="mt-1 text-xs text-slate-400">
           source: {composed.source}
-          {composed.verified ? " (verified)" : " (unverified — review before trusting)"}
+          {composed.verified
+            ? " (verified)"
+            : " (unverified — review before trusting)"}
         </p>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          type="button"
+      <div className="mt-4 flex flex-wrap gap-2">
+        <GlassButton
+          variant="success"
           disabled={!sentence || !supported || speaking}
           onClick={() => speak(sentence, lang)}
-          className="rounded bg-green-600 px-4 py-2 font-semibold text-white hover:bg-green-500 focus-visible:ring disabled:opacity-50"
         >
           🔊 Speak
-        </button>
+        </GlassButton>
         {speaking && (
-          <button type="button" onClick={cancel} className="rounded bg-gray-700 px-4 py-2">
+          <GlassButton variant="clear" onClick={cancel}>
             Stop
-          </button>
+          </GlassButton>
         )}
-        <button
-          type="button"
+        <GlassButton
+          variant="clear"
           disabled={!words.length}
           onClick={() => {
             cancel();
             setComposed(null);
             onClear();
           }}
-          className="rounded bg-gray-700 px-4 py-2 hover:bg-gray-600 focus-visible:ring disabled:opacity-50"
         >
           Finish / Clear
-        </button>
+        </GlassButton>
       </div>
 
       {!supported && (
         <p className="mt-2 text-xs text-amber-300">
-          This browser has no speech synthesis — the sentence is shown but not spoken.
+          This browser has no speech synthesis — the sentence is shown but not
+          spoken.
         </p>
       )}
     </section>

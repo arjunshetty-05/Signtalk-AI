@@ -1,0 +1,7 @@
+{
+  "task_id": "task-gcn-recognizer",
+  "task_description": "Re-architect the Indian Sign Language recognizer around a skeleton graph-convolutional network (DecoupledGCN / ST-GCN over a 27-node MediaPipe-Holistic graph), trained and evaluated on the OFFICIAL signer-independent INCLUDE-50 split. Add the [T,27,2] graph feature builder as the single source of truth, GCN-aware training/export/serving/threshold plumbing, vocabulary regeneration, an optional fail-closed OpenHands warm-start, a user-gated measured dataset download, then train and report signer-independent top-1 AND top-5 on the official INCLUDE-50 test split. Keep the existing vector GRU/Transformer app path and all 48 tests green throughout. All work in the existing worktree on branch feat/gcn-recognizer.",
+  "status": "pending",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004"],
+  "blocked_reason": null
+}

@@ -5,6 +5,7 @@ import VideoPreview from "../components/VideoPreview.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import PreflightCheck from "../components/PreflightCheck.jsx";
 import SentenceBox from "../components/SentenceBox.jsx";
+import GlassButton from "../components/GlassButton.jsx";
 
 // Capture frame rate for the base64 JPEG batch sent to /api/recognize. The
 // server resamples to config `sequence_length`, so this only needs to be a
@@ -133,105 +134,136 @@ export default function CaptureScreen({ signerId, onWord }) {
 
   return (
     <section className="mx-auto max-w-xl">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-bold">Sign capture</h2>
-        <StatusBadge state={state} />
-      </div>
+      <div className="glass p-5 sm:p-6">
+        <div className="mb-4 flex items-center justify-end">
+          <StatusBadge state={state} />
+        </div>
 
-      {error && (
-        <p className="mb-4 rounded bg-red-900 p-3 text-red-100" role="alert">
-          {error}
-        </p>
-      )}
-
-      <VideoPreview videoRef={videoRef} mirrored recording={state === "recording"} />
-
-      <PreflightCheck videoRef={videoRef} ready={ready} onReadyChange={setPreflightOk} />
-      {ready && !preflightOk && (
-        <p className="mt-1 text-xs text-amber-300">
-          Adjust lighting/framing until the checks turn green. You can still
-          hold Space to sign anyway.
-        </p>
-      )}
-
-      {state === "recording" && (
-        <p className="mt-2 text-sm text-gray-300">Captured {frameCount} frames…</p>
-      )}
-
-      {/* Keyboard-first, but also mouse/touch operable via a button. */}
-      <div className="mt-4">
-        <button
-          type="button"
-          disabled={!ready}
-          onMouseDown={beginRecording}
-          onMouseUp={endRecordingAndUpload}
-          onMouseLeave={() => state === "recording" && endRecordingAndUpload()}
-          onTouchStart={(e) => {
-            e.preventDefault();
-            beginRecording();
-          }}
-          onTouchEnd={(e) => {
-            e.preventDefault();
-            endRecordingAndUpload();
-          }}
-          className="w-full rounded-lg bg-blue-600 px-4 py-4 text-lg font-semibold text-white hover:bg-blue-500 focus-visible:ring disabled:opacity-50"
-        >
-          Hold <kbd className="rounded bg-black/40 px-2">Space</kbd> (or hold this button) to sign
-        </button>
-      </div>
-
-      <div className="mt-6 min-h-[6rem] rounded-lg border border-gray-700 p-4 text-center">
-        {state === "analysing" ? (
-          <p className="text-lg text-amber-300" aria-live="polite">
-            Analysing…
-          </p>
-        ) : confirmed ? (
-          <>
-            <p className="text-sm text-gray-400">Confirmed word</p>
-            <p className="text-4xl font-bold text-green-400" aria-live="polite">
-              {confirmed}
-            </p>
-          </>
-        ) : result && result.decision === "accept" && result.label ? (
-          <>
-            <p className="text-sm text-gray-400">Recognised word</p>
-            <p className="text-4xl font-bold text-green-400" aria-live="polite">
-              {result.label}
-            </p>
-          </>
-        ) : result && result.decision === "confirm" ? (
-          <div aria-live="polite">
-            <p className="mb-2 text-sm text-amber-300">
-              Did you mean one of these? Tap the right word, or sign again.
-            </p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {result.candidates.map((c) => (
-                <button
-                  key={c.label}
-                  type="button"
-                  onClick={() => onConfirmChoice(c.label)}
-                  className="rounded-full bg-amber-600 px-4 py-2 font-semibold text-white hover:bg-amber-500 focus-visible:ring"
-                >
-                  {c.label}
-                  <span className="ml-2 text-xs opacity-80">
-                    {Math.round(c.p * 100)}%
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : message ? (
-          <p className="text-lg text-amber-300" aria-live="polite">
-            {message}
-          </p>
-        ) : (
-          <p className="text-gray-400">
-            Hold Space, sign a word, then release. The recognised word appears here.
+        {error && (
+          <p
+            className="mb-4 rounded-xl border border-red-400/30 bg-red-500/15 p-3 text-red-100"
+            role="alert"
+          >
+            {error}
           </p>
         )}
-      </div>
 
-      <SentenceBox words={words} onClear={() => setWords([])} />
+        <VideoPreview videoRef={videoRef} mirrored recording={state === "recording"} />
+
+        <PreflightCheck videoRef={videoRef} ready={ready} onReadyChange={setPreflightOk} />
+        {ready && !preflightOk && (
+          <p className="mt-2 text-xs text-amber-300">
+            Adjust lighting/framing until the checks turn green. You can still
+            hold Space to sign anyway.
+          </p>
+        )}
+
+        {state === "recording" && (
+          <p className="mt-2 flex items-center gap-2 text-sm text-slate-300">
+            <span className="h-1.5 w-1.5 animate-ping rounded-full bg-red-400" />
+            Captured {frameCount} frames…
+          </p>
+        )}
+
+        {/* Keyboard-first, but also mouse/touch operable via a button. */}
+        <div className="mt-4">
+          <GlassButton
+            variant={state === "recording" ? "danger" : "brand"}
+            disabled={!ready}
+            onMouseDown={beginRecording}
+            onMouseUp={endRecordingAndUpload}
+            onMouseLeave={() => state === "recording" && endRecordingAndUpload()}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              beginRecording();
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              endRecordingAndUpload();
+            }}
+            className={`w-full !rounded-2xl px-4 py-4 text-lg ${
+              state === "recording" ? "animate-pulse-ring" : ""
+            }`}
+          >
+            {state === "recording" ? (
+              "Recording… release to translate"
+            ) : (
+              <>
+                Hold{" "}
+                <kbd className="rounded-md border border-white/20 bg-white/10 px-2 py-0.5 text-sm">
+                  Space
+                </kbd>{" "}
+                (or this button) to sign
+              </>
+            )}
+          </GlassButton>
+        </div>
+
+        <div className="mt-6 grid min-h-[7rem] place-items-center overflow-hidden rounded-xl border border-white/10 bg-ink-900/50 p-5 text-center">
+          {state === "analysing" ? (
+            <p className="text-lg font-semibold shimmer-text" aria-live="polite">
+              Analysing your sign…
+            </p>
+          ) : confirmed ? (
+            <div className="animate-pop-in">
+              <p className="text-xs uppercase tracking-widest text-slate-400">
+                Confirmed word
+              </p>
+              <p
+                className="mt-1 bg-gradient-to-r from-emerald-300 to-teal-200 bg-clip-text text-5xl font-extrabold text-transparent"
+                aria-live="polite"
+              >
+                {confirmed}
+              </p>
+            </div>
+          ) : result && result.decision === "accept" && result.label ? (
+            <div className="animate-pop-in">
+              <p className="text-xs uppercase tracking-widest text-slate-400">
+                Recognised word
+              </p>
+              <p
+                className="mt-1 bg-gradient-to-r from-emerald-300 to-teal-200 bg-clip-text text-5xl font-extrabold text-transparent"
+                aria-live="polite"
+              >
+                {result.label}
+              </p>
+            </div>
+          ) : result && result.decision === "confirm" ? (
+            <div className="animate-fade-in" aria-live="polite">
+              <p className="mb-3 text-sm font-medium text-amber-200">
+                Did you mean one of these? Tap the right word, or sign again.
+              </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {result.candidates.map((c, i) => (
+                  <GlassButton
+                    key={c.label}
+                    variant="clear"
+                    onClick={() => onConfirmChoice(c.label)}
+                    style={{ animationDelay: `${i * 70}ms` }}
+                    className="animate-pop-in !px-4 !py-2 text-amber-50"
+                  >
+                    {c.label}
+                    <span className="ml-1 rounded-full bg-black/30 px-1.5 py-0.5 text-xs opacity-90">
+                      {Math.round(c.p * 100)}%
+                    </span>
+                  </GlassButton>
+                ))}
+              </div>
+            </div>
+          ) : message ? (
+            <p className="animate-fade-in text-lg text-amber-200" aria-live="polite">
+              {message}
+            </p>
+          ) : (
+            <p className="text-slate-400">
+              Hold Space, sign a word, then release. The recognised word appears
+              here.
+            </p>
+          )}
+        </div>
+
+        <SentenceBox words={words} onClear={() => setWords([])} />
+      </div>
     </section>
   );
 }
