@@ -197,11 +197,29 @@ reject). Add your Gemini key to `.env` (`GEMINI_API_KEY=`) for live translation.
 
 1. In the app's **Enrollment** tab, each signer records ~30 reps per sign across
    **3 separate sessions** (different day/light). Clips save under
-   `data/enroll/<signer>/<session>/`.
-2. Fine-tune on INCLUDE + enrolled data (the `finetune_enrolled.py` script will
-   be written against your real recorded layout — tell the agent once you have a
-   session recorded).
-3. Re-run Step 6 thresholds, freeze a golden set, run `pytest -m acceptance`.
+   `data/enroll/<signer>/<session>/<sign>_<uuid>.webm` and are indexed in
+   SQLite. Record **at least two sessions** — the fine-tune holds out the latest
+   session for an honest, session-independent number.
+2. Fine-tune the ensemble on the enrolled clips. The script warm-starts each
+   trained member from its checkpoint and fine-tunes it on your clips, using the
+   same feature extractor + label order as serving:
+
+   ```powershell
+   .\.venv\Scripts\python.exe training/finetune_enrolled.py `
+       --manifest models/ensemble.json `
+       --enroll-root data/enroll `
+       --out-dir runs/finetune `
+       --report runs/finetune_report.json
+   # add --write-manifest to point models/ensemble.json at the fine-tuned checkpoints
+   ```
+
+   **Done when:** `runs/finetune_report.json` prints a `split_mode` of
+   `session-holdout` (NOT `stratified-fallback` — that means you only recorded
+   one session) and each member's `val_top1_after_finetune`. Signs recorded in
+   enrollment but not in the trained vocabulary are skipped and tallied under
+   `skipped` — growing the vocabulary needs retraining (Step 4), not fine-tuning.
+3. Re-run **Step 6** (thresholds) and **Step 6.5** (evaluate) on the fine-tuned
+   manifest, freeze a golden set, run `pytest -m acceptance`.
 
 ---
 

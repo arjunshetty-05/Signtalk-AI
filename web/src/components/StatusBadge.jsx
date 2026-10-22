@@ -14,9 +14,9 @@ export default function StatusBadge({ state }) {
     analysing: "bg-amber-300 animate-ping",
   };
   const label = {
-    idle: "Idle",
+    idle: "Ready",
     recording: "Recording",
-    analysing: "Analysing",
+    analysing: "Thinking…",
   };
   return (
     <span

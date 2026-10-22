@@ -6,6 +6,7 @@ import StatusBadge from "../components/StatusBadge.jsx";
 import PreflightCheck from "../components/PreflightCheck.jsx";
 import SentenceBox from "../components/SentenceBox.jsx";
 import GlassButton from "../components/GlassButton.jsx";
+import Celebrate from "../components/Celebrate.jsx";
 
 // Capture frame rate for the base64 JPEG batch sent to /api/recognize. The
 // server resamples to config `sequence_length`, so this only needs to be a
@@ -13,11 +14,14 @@ import GlassButton from "../components/GlassButton.jsx";
 const CAPTURE_FPS = 15;
 
 /**
- * Push-to-sign capture screen (record-then-recognise, Section 6.1).
+ * Tap-to-sign capture screen (record-then-recognise, Section 6.1).
  *
- * Hold Space to record a whole clip, release to stop and upload the UN-mirrored
- * frame batch to /api/recognize, then show the returned label (or the reject
- * reason). The capture state (idle / recording / analysing) is always visible.
+ * TAP (don't hold) to start recording a whole clip, then TAP again to stop and
+ * upload the UN-mirrored frame batch to /api/recognize — a toggle, not a hold,
+ * because you can't comfortably hold a key/button while signing with both
+ * hands. Space, the big button, and touch all toggle. The capture state (idle /
+ * recording / analysing) is always visible, with a live elapsed timer while
+ * recording.
  *
  * @param {{signerId: string, onWord?: (label: string) => void}} props
  *   `onWord` is called with each accepted/confirmed word so the parent can
@@ -27,19 +31,24 @@ export default function CaptureScreen({ signerId, onWord }) {
   const { videoRef, ready, error, startCapture, stopCapture } = useWebcam();
   const [state, setState] = useState("idle"); // idle | recording | analysing
   const [frameCount, setFrameCount] = useState(0);
+  const [elapsedMs, setElapsedMs] = useState(0);
   const [result, setResult] = useState(null); // recognize response
   const [message, setMessage] = useState("");
   const [confirmed, setConfirmed] = useState(null); // label the user tapped
   const [preflightOk, setPreflightOk] = useState(false);
   const [words, setWords] = useState([]); // sentence buffer
+  const [celebrateKey, setCelebrateKey] = useState(0); // bump to fire confetti
   const stateRef = useRef(state);
   stateRef.current = state;
+  const startedAtRef = useRef(0);
+  const timerRef = useRef(null);
 
   // Append an accepted/confirmed word to the sentence buffer, then notify any
-  // parent that also wants it (onWord is optional).
+  // parent that also wants it (onWord is optional). Fires the celebration.
   const addWord = useCallback(
     (label) => {
       setWords((prev) => [...prev, label]);
+      setCelebrateKey((k) => k + 1);
       if (onWord) onWord(label);
     },
     [onWord]
@@ -51,7 +60,13 @@ export default function CaptureScreen({ signerId, onWord }) {
     setMessage("");
     setConfirmed(null);
     setFrameCount(0);
+    setElapsedMs(0);
     setState("recording");
+    startedAtRef.current = performance.now();
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setElapsedMs(performance.now() - startedAtRef.current);
+    }, 100);
     startCapture(CAPTURE_FPS, (n) => setFrameCount(n));
   }, [ready, startCapture]);
 
@@ -72,6 +87,10 @@ export default function CaptureScreen({ signerId, onWord }) {
 
   const endRecordingAndUpload = useCallback(async () => {
     if (stateRef.current !== "recording") return;
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
     const frames = stopCapture();
     setState("analysing");
 
@@ -107,30 +126,30 @@ export default function CaptureScreen({ signerId, onWord }) {
     }
   }, [signerId, stopCapture, addWord]);
 
-  // Hold-Space push-to-sign. Ignore auto-repeat keydown events.
+  // Toggle: start if idle, stop if recording.
+  const toggleRecording = useCallback(() => {
+    if (stateRef.current === "recording") endRecordingAndUpload();
+    else beginRecording();
+  }, [beginRecording, endRecordingAndUpload]);
+
+  // Space toggles capture (tap, not hold) — hands-free friendly. Ignore
+  // auto-repeat and don't hijack Space while typing in a form field.
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.code !== "Space" || e.repeat) return;
-      // Don't hijack Space while typing in a form field.
       const tag = e.target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       e.preventDefault();
-      beginRecording();
-    };
-    const onKeyUp = (e) => {
-      if (e.code !== "Space") return;
-      const tag = e.target?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      e.preventDefault();
-      endRecordingAndUpload();
+      toggleRecording();
     };
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-    };
-  }, [beginRecording, endRecordingAndUpload]);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [toggleRecording]);
+
+  // Clean up the timer if the component unmounts mid-recording.
+  useEffect(() => () => timerRef.current && clearInterval(timerRef.current), []);
+
+  const seconds = (elapsedMs / 1000).toFixed(1);
 
   return (
     <section className="mx-auto max-w-xl">
@@ -148,55 +167,62 @@ export default function CaptureScreen({ signerId, onWord }) {
           </p>
         )}
 
-        <VideoPreview videoRef={videoRef} mirrored recording={state === "recording"} />
+        <div className="relative">
+          <VideoPreview videoRef={videoRef} mirrored recording={state === "recording"} />
+          {/* Live recording timer, top-right over the preview. */}
+          {state === "recording" && (
+            <span className="absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1 font-mono text-sm font-semibold text-white shadow-lg backdrop-blur-sm">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />
+              {seconds}s
+            </span>
+          )}
+          {/* Confetti burst anchored to the preview on each accepted word. */}
+          <Celebrate trigger={celebrateKey} />
+        </div>
 
         <PreflightCheck videoRef={videoRef} ready={ready} onReadyChange={setPreflightOk} />
         {ready && !preflightOk && (
           <p className="mt-2 text-xs text-amber-300">
             Adjust lighting/framing until the checks turn green. You can still
-            hold Space to sign anyway.
+            tap to sign anyway.
           </p>
         )}
 
         {state === "recording" && (
           <p className="mt-2 flex items-center gap-2 text-sm text-slate-300">
             <span className="h-1.5 w-1.5 animate-ping rounded-full bg-red-400" />
-            Captured {frameCount} frames…
+            Recording… {frameCount} frames captured
           </p>
         )}
 
-        {/* Keyboard-first, but also mouse/touch operable via a button. */}
+        {/* Tap to start / tap to stop — a toggle, keyboard + touch operable. */}
         <div className="mt-4">
           <GlassButton
             variant={state === "recording" ? "danger" : "brand"}
-            disabled={!ready}
-            onMouseDown={beginRecording}
-            onMouseUp={endRecordingAndUpload}
-            onMouseLeave={() => state === "recording" && endRecordingAndUpload()}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              beginRecording();
-            }}
-            onTouchEnd={(e) => {
-              e.preventDefault();
-              endRecordingAndUpload();
-            }}
+            disabled={!ready || state === "analysing"}
+            onClick={toggleRecording}
             className={`w-full !rounded-2xl px-4 py-4 text-lg ${
               state === "recording" ? "animate-pulse-ring" : ""
             }`}
           >
             {state === "recording" ? (
-              "Recording… release to translate"
+              <>
+                <StopGlyph /> Tap to stop &amp; translate
+              </>
+            ) : state === "analysing" ? (
+              "Analysing…"
             ) : (
               <>
-                Hold{" "}
+                <RecGlyph /> Tap to sign{" "}
                 <kbd className="rounded-md border border-white/20 bg-white/10 px-2 py-0.5 text-sm">
                   Space
-                </kbd>{" "}
-                (or this button) to sign
+                </kbd>
               </>
             )}
           </GlassButton>
+          <p className="mt-2 text-center text-xs text-slate-500">
+            Tap once to start, sign with both hands free, then tap again to stop.
+          </p>
         </div>
 
         <div className="mt-6 grid min-h-[7rem] place-items-center overflow-hidden rounded-xl border border-white/10 bg-ink-900/50 p-5 text-center">
@@ -210,7 +236,7 @@ export default function CaptureScreen({ signerId, onWord }) {
                 Confirmed word
               </p>
               <p
-                className="mt-1 bg-gradient-to-r from-emerald-300 to-teal-200 bg-clip-text text-5xl font-extrabold text-transparent"
+                className="mt-1 animate-gradient-pan bg-gradient-to-r from-emerald-300 via-teal-200 to-cyan-300 bg-[length:200%_auto] bg-clip-text text-5xl font-extrabold text-transparent"
                 aria-live="polite"
               >
                 {confirmed}
@@ -222,7 +248,7 @@ export default function CaptureScreen({ signerId, onWord }) {
                 Recognised word
               </p>
               <p
-                className="mt-1 bg-gradient-to-r from-emerald-300 to-teal-200 bg-clip-text text-5xl font-extrabold text-transparent"
+                className="mt-1 animate-gradient-pan bg-gradient-to-r from-emerald-300 via-teal-200 to-cyan-300 bg-[length:200%_auto] bg-clip-text text-5xl font-extrabold text-transparent"
                 aria-live="polite"
               >
                 {result.label}
@@ -256,8 +282,8 @@ export default function CaptureScreen({ signerId, onWord }) {
             </p>
           ) : (
             <p className="text-slate-400">
-              Hold Space, sign a word, then release. The recognised word appears
-              here.
+              Tap to start, sign a word, then tap to stop. The recognised word
+              appears here.
             </p>
           )}
         </div>
@@ -268,13 +294,22 @@ export default function CaptureScreen({ signerId, onWord }) {
   );
 }
 
+/** Small record-dot glyph for the idle button. */
+function RecGlyph() {
+  return <span className="inline-block h-3 w-3 rounded-full bg-white/90 shadow-[0_0_8px_2px_rgba(255,255,255,0.6)]" aria-hidden="true" />;
+}
+/** Small stop-square glyph for the recording button. */
+function StopGlyph() {
+  return <span className="inline-block h-3 w-3 rounded-[3px] bg-white" aria-hidden="true" />;
+}
+
 /** Map a server reject_reason to a short, friendly message. */
 function rejectMessage(reason) {
   switch (reason) {
     case "hands_not_visible":
       return "Hands weren't visible — please sign again.";
     case "too_short":
-      return "That was too quick — hold Space a little longer.";
+      return "That was too quick — record a little longer.";
     case "too_long":
       return "That was too long — try a shorter clip.";
     case "low_confidence":

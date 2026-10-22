@@ -53,7 +53,10 @@ export default function App() {
               <HandIcon className="h-4 w-4 text-white" />
             </span>
             <span className="text-base font-bold tracking-tight text-white">
-              SignTalk <span className="text-brand-400">AI</span>
+              SignTalk{" "}
+              <span className="animate-gradient-pan bg-gradient-to-r from-brand-400 via-accent-violet to-accent-cyan bg-[length:200%_auto] bg-clip-text text-transparent">
+                AI
+              </span>
             </span>
           </div>
 
@@ -114,7 +117,7 @@ export default function App() {
 const SCREEN_META = {
   capture: {
     title: "Sign to speech",
-    subtitle: "Hold to record a sign, release, and we translate it to a spoken sentence.",
+    subtitle: "Tap to start, sign with both hands free, tap to stop — we translate it to a spoken sentence.",
   },
   captions: {
     title: "Voice to captions",

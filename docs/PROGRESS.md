@@ -567,15 +567,46 @@ vite v5.3.1 ... ✓ 92 modules transformed ... built            # exit 0
 ### To enable real transcription (optional, Direction B)
 
 Whisper is a heavy optional dependency and is NOT in the frozen lockfile. Install
-it into the venv when you want Direction B:
+the pinned STT extras (NOT a bare `pip install faster-whisper` — see the caveat
+below):
 
 ```text
-.\.venv\Scripts\python.exe -m pip install faster-whisper
+.\.venv\Scripts\python.exe -m pip install -e ".[stt]"
 ```
 
-Then set `WHISPER_MODEL=small` (or base/tiny) in `.env`. Kannada STT is
-generally weaker — test ~20 sentences early (R7); the browser Web Speech API is
-the fallback.
+Then set `WHISPER_MODEL=small` (or base/tiny) in `.env`. Runs on CPU by default;
+set `WHISPER_DEVICE=cuda` + `WHISPER_COMPUTE=float16` only on a GPU box with the
+CUDA runtime on PATH (otherwise it raises `cublas64_12.dll is not found`).
+Kannada STT is generally weaker — test ~20 sentences early (R7); the browser Web
+Speech API is the fallback.
+
+> ⚠️ **Dependency caveat (fixed):** the latest `av` (19.x) removed the
+> `metadata_errors` kwarg that faster-whisper 1.2.x passes to `av.open`, so a
+> bare `pip install faster-whisper` yields `open() got an unexpected keyword
+> argument 'metadata_errors'` and transcription silently returns empty. The
+> `.[stt]` extra pins the known-good pair: `faster-whisper==1.2.1`, `av==12.3.0`.
+
+### Direction B — wired up + verified (this run)
+
+The `/ws/speech` path now emits **live interim captions** (`is_final: false`)
+as audio accumulates (every `INTERIM_BYTES`), and a **final** transcript
+(`is_final: true`) on `flush` — matching the web client, which shows interim in
+the live-caption area and appends finals to the log. The transcriber backend is
+now injectable (`set_transcriber_factory`) so the real protocol is unit-tested
+(not just the degraded path).
+
+```text
+$ .\.venv\Scripts\python.exe -m pytest server/tests/test_speech.py -q
+3 passed          # graceful-degradation + flush-final + interim-caption
+
+# real backend, real streamed audio, real WS endpoint (device=cpu, int8):
+STT: faster-whisper (tiny, device=cpu, int8)
+Processing audio with duration 00:01.000
+REAL-BACKEND WS OK: {'type':'transcript','is_final':True,'lang':'en'}
+```
+
+(Full suite after this run: **50 passed** — the 48 before plus the 2 new
+real-protocol speech tests. `ruff check core/ server/ training/ tools/` clean.)
 
 ### Code status against the plan
 

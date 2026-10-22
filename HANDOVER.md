@@ -111,8 +111,17 @@ Healthy backend startup logs show:
   instant). You get: the word (accept), top-3 "did you mean?" chips (confirm),
   or "please sign again" (reject). Accepted/confirmed words build a sentence you
   can **Speak** in en/hi/kn.
-- **Captions** (voice → text): needs `faster-whisper` installed
-  (`pip install faster-whisper`); otherwise it says STT is unavailable.
+- **Captions** (voice → text): needs the STT extras installed
+  (`.\.venv\Scripts\python.exe -m pip install -e ".[stt]"`); otherwise it says
+  STT is unavailable and you fall back to the browser's own dictation. Live
+  (interim) captions appear as you speak; "Transcribe now" / stopping commits a
+  final line to the conversation log. Runs on CPU by default (set
+  `WHISPER_DEVICE=cuda` + `WHISPER_COMPUTE=float16` only on a box with the CUDA
+  runtime installed).
+  > ⚠️ Install the extras group, NOT a bare `pip install faster-whisper`: the
+  > latest `av` (19.x) breaks faster-whisper 1.2.x (`open() got an unexpected
+  > keyword argument 'metadata_errors'` → captions silently come back empty).
+  > `.[stt]` pins the known-good pair (`faster-whisper==1.2.1`, `av==12.3.0`).
 - **Enrollment**: record your own clips per sign (this is how we'll push demo
   accuracy up later — see `PROJECT_CONTEXT.md` L7).
 
@@ -168,8 +177,11 @@ the `labels` list matches the trained classes **in label-index order** (see the
 **Done (code + verified):** full v3 pipeline — capture, pose+hand landmarks,
 feature builder, ensemble + calibration + fusion + TTA, accept/confirm/reject
 decision engine, sentence layer (scripted → Gemini → template) with en/hi/kn +
-browser speech, voice→captions, enrollment recording, SQLite storage (no
-Firebase), threshold tool. One real trained model (9 Greetings signs).
+browser speech, voice→captions (Direction B — live interim + final transcripts,
+real faster-whisper backend verified end to end on CPU), enrollment recording +
+**fine-tune pipeline** (`training/finetune_enrolled.py`), **evaluation harness**
+(`tools/evaluate.py` → `docs/EVALUATION.md`), SQLite storage (no Firebase),
+threshold tool. One real trained model (9 Greetings signs).
 
 **Left (mostly data + manual, not code):**
 - Train on more INCLUDE categories to grow the vocabulary.

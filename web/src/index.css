@@ -65,8 +65,10 @@ body {
   mask-image: linear-gradient(180deg, #000 0%, transparent 55%);
   -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 55%);
 }
-/* app-blobs element kept in the DOM but intentionally neutralised: a single,
-   very soft, low-opacity cool glow instead of competing colour blobs. */
+/* Lively ambient blobs: three soft, blurred colour fields that slowly drift,
+   giving the dark UI a living, playful backdrop for the glass to refract.
+   Heavily blurred + moderate opacity so content stays perfectly readable, and
+   the drift is paused under reduced motion (see bottom of file). */
 .app-blobs {
   position: fixed;
   inset: 0;
@@ -82,17 +84,40 @@ body {
   will-change: transform;
 }
 .app-blobs span:nth-child(1) {
-  top: -20%;
+  top: -18%;
   left: 50%;
   width: 60vmax;
-  height: 40vmax;
-  transform: translateX(-50%);
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.14), transparent 70%);
+  height: 42vmax;
+  margin-left: -30vmax;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.28), transparent 70%);
+  animation: aurora 26s linear infinite;
 }
-/* Second and third blobs removed from view to avoid the "AI gradient" look. */
-.app-blobs span:nth-child(2),
+.app-blobs span:nth-child(2) {
+  top: 30%;
+  left: -10%;
+  width: 46vmax;
+  height: 46vmax;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.22), transparent 70%);
+  animation: aurora 34s linear infinite reverse;
+}
 .app-blobs span:nth-child(3) {
-  display: none;
+  bottom: -20%;
+  right: -8%;
+  width: 50vmax;
+  height: 40vmax;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.2), transparent 70%);
+  animation: aurora 30s linear infinite;
+}
+@keyframes aurora {
+  0% {
+    transform: translate(-6%, -4%) rotate(0deg);
+  }
+  50% {
+    transform: translate(6%, 6%) rotate(180deg);
+  }
+  100% {
+    transform: translate(-6%, -4%) rotate(360deg);
+  }
 }
 
 /* ---- Reusable surface utilities ----------------------------------------- */
@@ -154,6 +179,33 @@ body {
   }
   100% {
     background-position: 200% 0;
+  }
+}
+
+/* ---- Confetti celebration (components/Celebrate.jsx) --------------------
+   Each piece flies out to its own (--dx,--dy), spins to (--rot), then fades
+   and drops. Decorative only; the component renders nothing under reduced
+   motion so this never runs for those users. */
+.confetti-piece {
+  animation: confetti-fly 1s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+@keyframes confetti-fly {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(0.6);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  70% {
+    transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--dx), calc(var(--dy) + 60px)) rotate(var(--rot))
+      scale(0.9);
+    opacity: 0;
   }
 }
 
