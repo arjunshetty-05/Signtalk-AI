@@ -157,10 +157,4 @@ Web Application: [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## 8. Prioritized Task List (For the Next Few Days)
 
-1. [ ] **Verify Live Gesture Recognition**: Test with `frame_skip=2` and unmirrored camera; confirm latency < 250ms.
-2. [ ] **Fix Firebase Credentials / Mock Mode**: Ensure smooth login & conversation history retrieval even without live GCP billing.
-3. [ ] **Gemini Prompt Tuning**: Refine prompt in `backend/nlp_correction.py` for snappy, natural conversational outputs.
-4. [ ] **Translation & Indic Languages**: Verify English $\rightarrow$ Hindi / Kannada translation and speech playback.
-5. [ ] **Finalize Presentation / Paper Assets**: Export confusion matrices from `runs/`, record UI walkthrough, and compile IEEE Phase-2 report.
