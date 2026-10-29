@@ -23,7 +23,7 @@ choices.
 | Sentence LLM | Gemini via `GEMINI_MODEL` env var | provider interface (gemini / none / ollama); 4 s timeout; strict-JSON + safety check |
 | Translation | Scripted table + LLM JSON (en/hi/kn) | SQLite cache; phrasebook offline; Google Cloud Translate optional |
 | Text-to-speech | **Browser `SpeechSynthesis`** by default | optional gTTS via `/api/tts`; **Coqui dropped** |
-| Speech-to-text | faster-whisper / openai-whisper (small/base) + VAD | browser Web Speech API fallback |
+| Speech-to-text | faster-whisper / openai-whisper (`large-v3-turbo` under local evaluation) | Multilingual local inference; accuracy and CPU latency must be measured on representative Hindi/Kannada speech |
 | Emotion | DeepFace (optional, low priority) | default `neutral`; only nudges sentence tone |
 | Frontend | React + Vite + Tailwind | preflight, capture, enroll, sentence UI |
 | Serving format | ONNX | portable, fast inference |
@@ -35,7 +35,7 @@ GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.5-flash       # [VERIFY]; Google retires models often
 LLM_PROVIDER=gemini                 # gemini | none | ollama
 LLM_TIMEOUT_SECONDS=4
-WHISPER_MODEL=small                 # small | base | tiny
+WHISPER_MODEL=large-v3-turbo        # tiny | base | small | medium | large-v3 | large-v3-turbo
 ENABLE_EMOTION=false
 STORAGE_BACKEND=sqlite              # sqlite | firestore
 AUTH_MODE=guest                     # guest | firebase
@@ -43,6 +43,17 @@ FIREBASE_SERVICE_ACCOUNT_PATH=
 CORS_ORIGINS=http://localhost:3000
 USE_GPU=auto
 ```
+
+The captions endpoint forces the selected language (`en`, `hi`, or `kn`).
+Whisper is an automatic speech recognizer, not a grammar-correction system;
+Hindi/Kannada wording can still be inaccurate. The server rejects output that
+contains none of the selected language's expected script rather than displaying
+an obvious wrong-script transcript.
+
+The sign-capture camera requests the widest view exposed by the webcam's zoom
+controls and offers a camera selector when multiple cameras are available.
+Webcams without a zoom control require moving the camera farther back or using
+a wider-angle camera.
 
 ### Target config (`config/signtalk.yaml`, placeholder values)
 

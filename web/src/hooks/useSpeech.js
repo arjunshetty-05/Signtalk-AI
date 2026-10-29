@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 // Browser SpeechSynthesis TTS (PROJECT_CONTEXT 5.12): free, offline-capable,
 // the default speech path. Hindi/Kannada voice availability varies by device,
 // so this must be tested on the demo machine; we pick the best matching voice
-// per language and fall back gracefully if none exists.
+// per language and report when none exists rather than speaking with the wrong
+// language's voice.
 const LANG_CODES = { en: "en-IN", hi: "hi-IN", kn: "kn-IN" };
 const LANG_FALLBACK = { en: "en", hi: "hi", kn: "kn" };
 
@@ -46,14 +47,15 @@ export function useSpeech() {
     setSpeaking(false);
   }, [supported]);
 
-  /** Speak `text` in app language `lang`. No-op (returns false) if unsupported. */
+  /** Speak only with a matching language voice; never silently use another language. */
   const speak = useCallback(
     (text, lang = "en") => {
       if (!supported || !text) return false;
+      const v = voiceFor(lang);
+      if (!v) return false;
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      const v = voiceFor(lang);
-      if (v) u.voice = v;
+      u.voice = v;
       u.lang = LANG_CODES[lang] || lang;
       u.onend = () => setSpeaking(false);
       u.onerror = () => setSpeaking(false);

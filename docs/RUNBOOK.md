@@ -141,37 +141,6 @@ number. If it prints `false`, two signs are confusable — note it; later drop o
 
 ---
 
-## Step 6.5 — Evaluate the ensemble (Gate 6)
-
-Produce the paper-grade metric set and the `docs/EVALUATION.md` asset: top-1 /
-top-5, macro-F1, a per-class precision/recall/F1 table, the confusion matrix,
-and the decision-layer coverage + accepted-accuracy at the configured
-thresholds. Uses the SAME calibrate→fuse path as serving, so the numbers match
-what the running system produces.
-
-```powershell
-.\.venv\Scripts\python.exe tools/evaluate.py `
-    --processed-dir data/processed/include `
-    --manifest models/ensemble.json `
-    --split stratified --val-frac 0.2 --seed 0 `
-    --report runs/evaluation.json --markdown docs/EVALUATION.md
-```
-
-**Done when:** `runs/evaluation.json` and `docs/EVALUATION.md` are written and
-print the overall top-1/top-5/macro-F1.
-
-> ⚠️ **Honest split (Section 1.6):** `--split stratified` is a random split that
-> likely shares a signer across train and val — a *pipeline-validation* number,
-> NOT a defensible generalisation figure, and the tool labels it as such. For
-> the real number, point `--processed-dir` at the official INCLUDE **test**
-> split (or an enrolled session/signer hold-out) and pass `--split official`,
-> which evaluates every clip in that dir as-is with no mixing.
->
-> **Open-set check (Section 9.5):** add `--unknown-dir <processed-dir-of-OOV-clips>`
-> to measure how many out-of-vocabulary clips get wrongly *accepted* (target: 0).
-
----
-
 ## Step 7 — Serve the trained model
 
 Point the server at the ensemble and run it. In `.env`, uncomment:
@@ -197,29 +166,11 @@ reject). Add your Gemini key to `.env` (`GEMINI_API_KEY=`) for live translation.
 
 1. In the app's **Enrollment** tab, each signer records ~30 reps per sign across
    **3 separate sessions** (different day/light). Clips save under
-   `data/enroll/<signer>/<session>/<sign>_<uuid>.webm` and are indexed in
-   SQLite. Record **at least two sessions** — the fine-tune holds out the latest
-   session for an honest, session-independent number.
-2. Fine-tune the ensemble on the enrolled clips. The script warm-starts each
-   trained member from its checkpoint and fine-tunes it on your clips, using the
-   same feature extractor + label order as serving:
-
-   ```powershell
-   .\.venv\Scripts\python.exe training/finetune_enrolled.py `
-       --manifest models/ensemble.json `
-       --enroll-root data/enroll `
-       --out-dir runs/finetune `
-       --report runs/finetune_report.json
-   # add --write-manifest to point models/ensemble.json at the fine-tuned checkpoints
-   ```
-
-   **Done when:** `runs/finetune_report.json` prints a `split_mode` of
-   `session-holdout` (NOT `stratified-fallback` — that means you only recorded
-   one session) and each member's `val_top1_after_finetune`. Signs recorded in
-   enrollment but not in the trained vocabulary are skipped and tallied under
-   `skipped` — growing the vocabulary needs retraining (Step 4), not fine-tuning.
-3. Re-run **Step 6** (thresholds) and **Step 6.5** (evaluate) on the fine-tuned
-   manifest, freeze a golden set, run `pytest -m acceptance`.
+   `data/enroll/<signer>/<session>/`.
+2. Fine-tune on INCLUDE + enrolled data (the `finetune_enrolled.py` script will
+   be written against your real recorded layout — tell the agent once you have a
+   session recorded).
+3. Re-run Step 6 thresholds, freeze a golden set, run `pytest -m acceptance`.
 
 ---
 

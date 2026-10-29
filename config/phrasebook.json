@@ -1,6 +1,13 @@
 {
-  "note": "Offline phrasebook (PROJECT_CONTEXT 5.10 pref 3 / 5.11): single English word -> Hindi/Kannada for the template fallback. [VERIFY] — these are PLACEHOLDER machine translations for the 12 placeholder demo signs and MUST be reviewed by a native Hindi and Kannada speaker before any demo (R6). Keys are lower-case English words.",
+  "note": "Offline phrasebook (PROJECT_CONTEXT 5.10 pref 3 / 5.11): English sign labels -> Hindi/Kannada for the template fallback. These entries are demo translations and should be reviewed by native Hindi and Kannada speakers before production use. Keys are lower-case English labels.",
   "words": {
+    "alright":     { "en": "alright",    "hi": "ठीक है",       "kn": "ಸರಿ" },
+    "good morning": { "en": "good morning", "hi": "सुप्रभात", "kn": "ಶುಭೋದಯ" },
+    "good afternoon": { "en": "good afternoon", "hi": "शुभ दोपहर", "kn": "ಶುಭ ಮಧ್ಯಾಹ್ನ" },
+    "good evening": { "en": "good evening", "hi": "शुभ संध्या", "kn": "ಶುಭ ಸಂಜೆ" },
+    "good night": { "en": "good night", "hi": "शुभ रात्रि", "kn": "ಶುಭ ರಾತ್ರಿ" },
+    "how are you": { "en": "how are you", "hi": "आप कैसे हैं", "kn": "ನೀವು ಹೇಗಿದ್ದೀರಿ" },
+    "pleased":     { "en": "pleased",    "hi": "खुश",          "kn": "ಸಂತೋಷ" },
     "hello":      { "en": "hello",     "hi": "नमस्ते",      "kn": "ನಮಸ್ಕಾರ" },
     "thank you":  { "en": "thank you", "hi": "धन्यवाद",     "kn": "ಧನ್ಯವಾದ" },
     "help":       { "en": "help",      "hi": "मदद",         "kn": "ಸಹಾಯ" },

@@ -491,7 +491,15 @@ independent of model training, so it is usable today with the placeholder vocab.
   calls `/api/compose`, shows the sentence large/high-contrast with an
   en/hi/kn switch, and speaks it with the browser's voice (`useSpeech` hook,
   SpeechSynthesis — free, offline). Strict mode: speaks on an explicit "Speak"
-  tap. Flushes on 2.5 s idle, 8 words, or "Finish".
+  tap. Flushes signed words on 2.5 s idle or 8 words. Includes short and
+  multi-clause demo buttons to test translations without signing. Long demo
+  translations are explicitly marked unverified pending native-speaker review.
+- **Sign guide** — the web client loads supported labels from `/api/vocab` and
+  offers searchable cards with on-demand gesture clips under
+  `web/public/sign_guide/<label-slug>/<NN>.mp4`. Current inventory: three clips
+  for each supported sign, four for `hello`; update `VIDEO_COUNTS` in
+  `SignGuideScreen.jsx` when the clip inventory changes. Playback uses native
+  browser controls and does not preload videos before a user selects an example.
 
 ### Verification run in this environment (real output)
 
@@ -509,13 +517,16 @@ vite v5.3.1 ... ✓ 90 modules transformed ... built            # exit 0
 ### Gate 5 status
 
 The functional target of Gate 5 — "with no LLM key, every demo sentence still
-appears and speaks in all three languages" — is **met in code**: compose with
-`LLM_PROVIDER=none` returns scripted/template sentences and the browser speaks
-them. The remaining Gate-5 items are human/manual, not code:
+appears and speaks in all three languages" — is **implemented with a device
+voice prerequisite**: compose with `LLM_PROVIDER=none` returns scripted/template
+sentences, and the browser speaks only when it has a matching language voice.
+The remaining Gate-5 items are human/manual:
 
 - Native-speaker verification of every Hindi/Kannada demo sentence (R6).
-- Confirming Hindi/Kannada **voices exist on the demo laptop** (SpeechSynthesis
-  voice availability varies by device — Section 5.12); test on the real machine.
+- The inspected browser currently exposes English voices only. Install Hindi
+  and Kannada speech voices on the device and reload before testing speech in
+  those languages (SpeechSynthesis voice availability varies by device — Section
+  5.12).
 - Recording p95 compose latency **with** a real `GEMINI_MODEL` key, if the LLM
   path is used at all (the demo does not require it).
 
@@ -567,46 +578,15 @@ vite v5.3.1 ... ✓ 92 modules transformed ... built            # exit 0
 ### To enable real transcription (optional, Direction B)
 
 Whisper is a heavy optional dependency and is NOT in the frozen lockfile. Install
-the pinned STT extras (NOT a bare `pip install faster-whisper` — see the caveat
-below):
+it into the venv when you want Direction B:
 
 ```text
-.\.venv\Scripts\python.exe -m pip install -e ".[stt]"
+.\.venv\Scripts\python.exe -m pip install faster-whisper
 ```
 
-Then set `WHISPER_MODEL=small` (or base/tiny) in `.env`. Runs on CPU by default;
-set `WHISPER_DEVICE=cuda` + `WHISPER_COMPUTE=float16` only on a GPU box with the
-CUDA runtime on PATH (otherwise it raises `cublas64_12.dll is not found`).
-Kannada STT is generally weaker — test ~20 sentences early (R7); the browser Web
-Speech API is the fallback.
-
-> ⚠️ **Dependency caveat (fixed):** the latest `av` (19.x) removed the
-> `metadata_errors` kwarg that faster-whisper 1.2.x passes to `av.open`, so a
-> bare `pip install faster-whisper` yields `open() got an unexpected keyword
-> argument 'metadata_errors'` and transcription silently returns empty. The
-> `.[stt]` extra pins the known-good pair: `faster-whisper==1.2.1`, `av==12.3.0`.
-
-### Direction B — wired up + verified (this run)
-
-The `/ws/speech` path now emits **live interim captions** (`is_final: false`)
-as audio accumulates (every `INTERIM_BYTES`), and a **final** transcript
-(`is_final: true`) on `flush` — matching the web client, which shows interim in
-the live-caption area and appends finals to the log. The transcriber backend is
-now injectable (`set_transcriber_factory`) so the real protocol is unit-tested
-(not just the degraded path).
-
-```text
-$ .\.venv\Scripts\python.exe -m pytest server/tests/test_speech.py -q
-3 passed          # graceful-degradation + flush-final + interim-caption
-
-# real backend, real streamed audio, real WS endpoint (device=cpu, int8):
-STT: faster-whisper (tiny, device=cpu, int8)
-Processing audio with duration 00:01.000
-REAL-BACKEND WS OK: {'type':'transcript','is_final':True,'lang':'en'}
-```
-
-(Full suite after this run: **50 passed** — the 48 before plus the 2 new
-real-protocol speech tests. `ruff check core/ server/ training/ tools/` clean.)
+Then set `WHISPER_MODEL=medium` (or small/base/tiny/large-v3) in `.env`.
+Kannada STT is generally weaker — test ~20 sentences early (R7); the browser
+Web Speech API is the fallback.
 
 ### Code status against the plan
 
@@ -615,3 +595,100 @@ remains is **data + manual verification, not code**: train on INCLUDE (Gate 2),
 record enrollment (Phase 4), run `tools/pick_thresholds.py` on the trained model
 (Gate 3), freeze the golden set and run `pytest -m acceptance` (Gate 4),
 native-speaker-verify hi/kn, and confirm hi/kn browser voices on the demo laptop.
+
+---
+
+## Speech transcription language and quality follow-up
+
+The captions client sends the selected language code (`en`, `hi`, or `kn`) to
+the speech WebSocket. The server forces that language for Whisper transcription.
+The initial small-model trial nevertheless produced poor Hindi wording and
+Hindi-script output for a Kannada selection. Speech recognition is not grammar
+correction, and the smaller multilingual model can confuse Indic speech.
+
+Changes made:
+
+- Configure `WHISPER_MODEL=medium` for the running environment; this downloads a
+  larger model on first use and increases CPU latency.
+- Reject a non-empty transcript if it contains no characters from the selected
+  language's expected script. For example, Hindi-script output is shown as a
+  clear Kannada-recognition error when Kannada was selected, not as a Kannada
+  transcript.
+- Run model loading and transcription outside the ASGI event loop; use CPU
+  inference to avoid depending on unavailable CUDA libraries.
+- Add tests for forwarding `kn`, detecting a wrong-script transcript, and
+  rejecting unsupported language codes.
+
+Verification:
+
+```text
+$ .\.venv\Scripts\python.exe -m pytest core/tests server/tests -q
+53 passed, 1 warning
+
+$ .\.venv\Scripts\python.exe -m ruff check server/app/routers/speech.py server/tests/test_speech.py
+All checks passed!
+
+$ cd web && npm run build
+vite v5.3.1 ... built
+```
+
+These checks validate the language hint and failure handling. Recognition
+accuracy and Hindi grammar still require evaluation on representative Hindi and
+Kannada recordings with fluent speakers; changing model size is an attempt to
+improve recognition, not a guarantee.
+
+The `faster-whisper` Medium model was downloaded and loaded successfully on
+CPU. The backend must be restarted after changing `WHISPER_MODEL` so it loads
+the new model instead of an already-cached model instance.
+
+Follow-up for empty Kannada output: the browser now records a complete audio
+segment and sends it only after `MediaRecorder` finalizes it, rather than
+asking Whisper to decode partial time-sliced WebM chunks. While a request is
+running, the UI shows `Transcribing <language>…`; empty recognition now returns
+a language-specific retry message instead of leaving the caption area blank.
+Starting microphone access is also shown immediately. These changes were
+verified with automated tests/builds; human Kannada speech quality still needs
+recorded-sample evaluation.
+
+Latest manual check on the demo browser confirmed that Kannada audio reached
+Whisper with `lang=kn`, but the displayed result was garbled Kannada-script
+text rather than a reliably correct transcript. The Medium CPU decode also took
+long enough to leave the UI showing “Transcribing…” for minutes. The local
+Whisper path now uses VAD, disables prior-text conditioning, retains beam size 5
+for recognition quality, and limits CPU inference to four threads. Automated
+tests pass; this tuning still needs a fresh known-phrase Kannada recording
+before any accuracy improvement can be claimed.
+
+The known phrase “ninnadu oota aitha?” was then spoken in Kannada. Whisper
+returned an inaccurate, repetitive transcript. The user chose to keep speech
+processing local and approved testing `large-v3-turbo`; `.env` now selects that
+model. The model downloaded and loaded successfully, and the server logged
+completed Kannada inference requests (one 3-second clip took 7.8 seconds after
+VAD). The captions screen was switched away before the new output could be
+compared to the known phrase, so model accuracy remains unverified.
+
+## Sign recognizer activation
+
+The repository did include the trained 9-label GRU + Transformer greeting
+ensemble (`runs/m1_gru/best.pt`, `runs/m2_tf/best.pt`) and
+`models/ensemble.json`, but the local `.env` did not set
+`RECOGNIZER_MANIFEST`. Configured it as `models\ensemble.json` and restarted the
+API. Startup confirmed `loaded ensemble: 2 members, device=cpu`; `/health`
+returned 200 and `/api/vocab` returned the matching 9 labels. Full core/server
+suite: 54 passed. Existing validation metrics are from only 33 stratified
+validation clips, so reliable recognition across new signers still needs a
+separate signer-held-out evaluation and live testing.
+
+## Captions iteration 1 — automatic local partial updates
+
+The captions client previously recorded a whole utterance and sent it only
+after the user pressed “Transcribe now.” It now finalizes and transcribes
+complete five-second audio segments automatically while continuing to record
+the next segment. This keeps speech processing on the local Whisper backend;
+captions are periodic rather than word-by-word. Manual transcription remains
+available. Build and backend tests should pass before asking the user to test
+this iteration.
+
+If a quiet segment has no recognized speech after a valid transcript, the
+backend now labels that result as informational `no_speech`; the client keeps
+the last caption and conversation log instead of showing a false error banner.

@@ -203,7 +203,11 @@ def compose_sentence(
         entry = sentences[key]
         picked = {lang: str(entry.get(lang, "")) for lang in LANGS}
         if all(picked.values()):
-            return ComposeResult(sentences=picked, source="scripted", verified=True)
+            return ComposeResult(
+                sentences=picked,
+                source="scripted",
+                verified=bool(entry.get("verified", True)),
+            )
 
     # 2) LLM (optional) -------------------------------------------------------
     if provider is not None and not isinstance(provider, NullProvider):

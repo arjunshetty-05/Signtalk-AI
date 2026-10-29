@@ -851,7 +851,7 @@ SECTION 13.  CONFIGURATION AND ENVIRONMENT
   GEMINI_MODEL=gemini-3.5-flash       # [VERIFY]; Google retires models often
   LLM_PROVIDER=gemini                 # gemini | none | ollama
   LLM_TIMEOUT_SECONDS=4
-  WHISPER_MODEL=small                 # small | base | tiny
+  WHISPER_MODEL=large-v3-turbo        # local multilingual model; evaluate Hindi/Kannada quality and CPU latency
   ENABLE_EMOTION=false
   STORAGE_BACKEND=sqlite              # sqlite | firestore
   AUTH_MODE=guest                     # guest | firebase

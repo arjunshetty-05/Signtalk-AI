@@ -4,27 +4,22 @@
  */
 export default function StatusBadge({ state }) {
   const styles = {
-    idle: "border-white/10 bg-white/5 text-slate-300",
-    recording: "border-red-400/40 bg-red-500/15 text-red-200",
-    analysing: "border-amber-400/40 bg-amber-400/15 text-amber-200",
-  };
-  const dot = {
-    idle: "bg-slate-400",
-    recording: "bg-red-400 animate-pulse",
-    analysing: "bg-amber-300 animate-ping",
+    idle: "border border-[#dfe4dc] bg-[#edf1eb] text-[#52665a]",
+    recording: "bg-[#fae8e3] text-[#a43d30]",
+    analysing: "bg-[#fff3d8] text-[#8b6425]",
   };
   const label = {
-    idle: "Ready",
-    recording: "Recording",
-    analysing: "Thinking…",
+    idle: "Idle",
+    recording: "Recording…",
+    analysing: "Analysing…",
   };
   return (
     <span
       role="status"
       aria-live="polite"
-      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold backdrop-blur-md ${styles[state]}`}
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ${styles[state]}`}
     >
-      <span className={`h-2 w-2 rounded-full ${dot[state]}`} />
+      <span className={`h-1.5 w-1.5 rounded-full ${state === "recording" ? "animate-pulse bg-[#c94e3f]" : state === "analysing" ? "bg-[#c08a31]" : "bg-[#639273]"}`} aria-hidden="true" />
       {label[state]}
     </span>
   );

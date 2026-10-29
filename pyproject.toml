@@ -38,16 +38,6 @@ dev = [
     "ruff==0.4.10",
     "black==24.4.2",
 ]
-# Direction B (voice -> captions) speech-to-text. OPTIONAL + heavy, so it is not
-# in the base deps. The `av` pin matters: faster-whisper 1.2.x calls
-# `av.open(..., metadata_errors=...)`, which av>=13 removed — the latest av
-# (19.x) raises "open() got an unexpected keyword argument 'metadata_errors'"
-# and transcription silently returns empty. av==12.3.0 is the known-good pair.
-# Install with:  pip install -e ".[stt]"
-stt = [
-    "faster-whisper==1.2.1",
-    "av==12.3.0",
-]
 
 [tool.setuptools.packages.find]
 where = ["core"]

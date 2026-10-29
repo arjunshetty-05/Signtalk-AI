@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { openWideWebcam } from "../camera.js";
 
 /**
  * Open the webcam via getUserMedia and expose a ready-to-attach <video> ref
@@ -19,25 +20,45 @@ export function useWebcam(opts = {}) {
   const framesRef = useRef([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
+  const [wideView, setWideView] = useState(null);
+  const [cameras, setCameras] = useState([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
+  const [activeDeviceId, setActiveDeviceId] = useState("");
 
   useEffect(() => {
     let cancelled = false;
 
     async function open() {
+      setReady(false);
+      setError(null);
+      setWideView(null);
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width, height, facingMode: "user" },
-          audio: false,
+        const { stream, wideView: zoomedOut } = await openWideWebcam({
+          width,
+          height,
+          deviceId: selectedDeviceId,
         });
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
         streamRef.current = stream;
+        setWideView(zoomedOut);
+        setActiveDeviceId(stream.getVideoTracks()[0]?.getSettings().deviceId ?? "");
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
         setReady(true);
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          if (!cancelled) {
+            setCameras(devices.filter((device) => device.kind === "videoinput"));
+          }
+        } catch (err) {
+          if (!cancelled) {
+            setError(`Camera is open, but available cameras could not be listed: ${err?.message}`);
+          }
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err?.message || "Could not access the webcam.");
@@ -54,7 +75,7 @@ export function useWebcam(opts = {}) {
         streamRef.current = null;
       }
     };
-  }, [width, height]);
+  }, [width, height, selectedDeviceId]);
 
   /**
    * Begin grabbing UN-mirrored base64 JPEG frames at `fps`.
@@ -103,5 +124,15 @@ export function useWebcam(opts = {}) {
     return frames;
   }, []);
 
-  return { videoRef, ready, error, startCapture, stopCapture };
+  return {
+    videoRef,
+    ready,
+    error,
+    wideView,
+    cameras,
+    selectedDeviceId: selectedDeviceId || activeDeviceId,
+    setSelectedDeviceId,
+    startCapture,
+    stopCapture,
+  };
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getVocab, enrollStart, enrollClip, enrollProgress } from "../api.js";
 import VideoPreview from "../components/VideoPreview.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
-import GlassButton from "../components/GlassButton.jsx";
+import { openWideWebcam } from "../camera.js";
 
 // Target number of repetitions to record per sign during enrollment.
 const TARGET_REPS = 5;
@@ -22,8 +22,10 @@ export default function EnrollScreen({ signerId }) {
   const streamRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
+  const spaceHeldRef = useRef(false);
 
   const [camError, setCamError] = useState(null);
+  const [wideView, setWideView] = useState(null);
   const [vocab, setVocab] = useState([]);
   const [sign, setSign] = useState("");
   const [sessionId, setSessionId] = useState(null);
@@ -36,15 +38,16 @@ export default function EnrollScreen({ signerId }) {
     let cancelled = false;
     async function open() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 640, height: 480, facingMode: "user" },
-          audio: false,
+        const { stream, wideView: zoomedOut } = await openWideWebcam({
+          width: 640,
+          height: 480,
         });
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
         streamRef.current = stream;
+        setWideView(zoomedOut);
         if (videoRef.current) videoRef.current.srcObject = stream;
       } catch (err) {
         if (!cancelled) setCamError(err?.message || "Could not access the webcam.");
@@ -148,153 +151,147 @@ export default function EnrollScreen({ signerId }) {
     setMessage("");
   }, [sessionId, sign, state]);
 
-  // Hold-Space push-to-record (same gesture as capture). Ignore when typing or
-  // interacting with form controls.
+  // Hold-Space push-to-record without scrolling or hijacking other controls.
   useEffect(() => {
-    const typingTarget = (t) =>
-      t === "INPUT" || t === "TEXTAREA" || t === "SELECT";
     const onKeyDown = (e) => {
-      if (e.code !== "Space" || e.repeat || typingTarget(e.target?.tagName)) return;
+      if (e.code !== "Space") return;
+      const target = e.target instanceof Element ? e.target : null;
+      if (
+        target?.closest('input, textarea, select, [contenteditable="true"]')
+      ) {
+        return;
+      }
+      const captureButton = target?.closest("[data-space-capture]");
+      if (
+        !captureButton &&
+        target?.closest('button, a, [role="button"]')
+      ) {
+        return;
+      }
       e.preventDefault();
+      if (e.repeat) return;
+      spaceHeldRef.current = true;
       startRecording();
     };
     const onKeyUp = (e) => {
-      if (e.code !== "Space" || typingTarget(e.target?.tagName)) return;
+      if (e.code !== "Space" || !spaceHeldRef.current) return;
       e.preventDefault();
+      spaceHeldRef.current = false;
       stopAndUpload();
     };
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
     };
   }, [startRecording, stopAndUpload]);
 
-  const pct = Math.min(100, Math.round((recordedCount / TARGET_REPS) * 100));
-
   return (
-    <section className="mx-auto max-w-xl">
-      <div className="glass p-5 sm:p-6">
-        <div className="mb-4 flex items-center justify-end">
-          <StatusBadge state={state} />
+    <section className="mx-auto max-w-4xl">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <p className="mb-1 text-xs font-bold uppercase tracking-[0.18em] text-[#8b6a38]">Improve the vocabulary</p>
+          <h2 className="text-2xl font-bold tracking-tight text-[#1d2c25] sm:text-3xl">Enrollment</h2>
+          <p className="mt-1 text-sm text-[#69776e]">Record multiple examples of a sign for future model training.</p>
         </div>
+        <StatusBadge state={state} />
+      </div>
 
-        {camError && (
-          <p
-            className="mb-4 rounded-xl border border-red-400/30 bg-red-500/15 p-3 text-red-100"
-            role="alert"
+      {camError && (
+        <p className="mb-4 rounded-xl border border-[#f1c6bc] bg-[#fff1ed] p-3 text-[#9b3c2f]" role="alert">
+          {camError}
+        </p>
+      )}
+
+      <div className="mb-3 grid gap-3 rounded-xl border border-[#e6e3db] bg-white p-3 shadow-[0_4px_18px_rgba(36,49,40,0.04)] sm:grid-cols-2 sm:p-4">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-[#52635a]" htmlFor="signer">
+            Signer
+          </label>
+          <input
+            id="signer"
+            value={signerId}
+            readOnly
+            className="w-full rounded-lg border border-[#e2e1d9] bg-[#f8f7f3] px-3 py-2.5 text-[#56645b]"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-[#52635a]" htmlFor="sign">
+            Sign to record
+          </label>
+          <select
+            id="sign"
+            value={sign}
+            onChange={(e) => setSign(e.target.value)}
+            className="w-full rounded-lg border border-[#d8ddd7] bg-white px-3 py-2.5 text-[#26362e]"
           >
-            {camError}
+            {vocab.map((v) => (
+              <option key={v.label} value={v.label}>
+                {v.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-[#e6e3db] bg-[#fbfaf7] p-2.5">
+        <button
+          type="button"
+          onClick={startSession}
+          className="rounded-lg bg-[#1c5b46] px-4 py-2.5 font-semibold text-white hover:bg-[#164b39] focus-visible:ring"
+        >
+          {sessionId ? "Restart session" : "Start session"}
+        </button>
+        <span className="text-sm text-[#68766e]" aria-live="polite">
+          Reps for "{sign}": <strong>{recordedCount}</strong> / {TARGET_REPS}
+        </span>
+      </div>
+
+      <VideoPreview videoRef={videoRef} mirrored recording={state === "recording"} />
+      {wideView !== null && (
+        <p className="mt-2 text-sm text-[#748078]" role="status">
+          {wideView
+            ? "Camera is set to its widest supported view."
+            : "For a wider view, move the camera farther away; this camera may not support zoom-out."}
+        </p>
+      )}
+
+      <div className="mt-3">
+        <button
+          type="button"
+          disabled={!sessionId}
+          data-space-capture
+          onMouseDown={startRecording}
+          onMouseUp={stopAndUpload}
+          onMouseLeave={() => state === "recording" && stopAndUpload()}
+          onTouchStart={(e) => {
+            e.preventDefault();
+            startRecording();
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            stopAndUpload();
+          }}
+          className="w-full rounded-xl bg-[#1c5b46] px-4 py-3 text-base font-bold text-white hover:bg-[#164b39] focus-visible:ring disabled:opacity-50"
+        >
+          Hold <kbd className="rounded bg-black/40 px-2">Space</kbd> (or this button) to record a rep
+        </button>
+      </div>
+
+      <div className="mt-3 min-h-[2.5rem] rounded-xl border border-[#e6e3db] bg-white p-3 text-center">
+        {state === "analysing" ? (
+          <p className="text-[#916b2c]" aria-live="polite">
+            Saving clip…
+          </p>
+        ) : (
+          <p className="text-[#68766e]" aria-live="polite">
+            {message ||
+              (recordedCount >= TARGET_REPS
+                ? `Done — ${recordedCount} reps recorded for "${sign}".`
+                : "Record each rep by holding Space.")}
           </p>
         )}
-
-        <div className="mb-4 grid gap-3 sm:grid-cols-2">
-          <div>
-            <label
-              className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400"
-              htmlFor="signer"
-            >
-              Signer
-            </label>
-            <input
-              id="signer"
-              value={signerId}
-              readOnly
-              className="w-full rounded-xl border border-white/10 bg-ink-900/60 px-3 py-2 text-slate-200 focus-visible:ring"
-            />
-          </div>
-          <div>
-            <label
-              className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400"
-              htmlFor="sign"
-            >
-              Sign to record
-            </label>
-            <select
-              id="sign"
-              value={sign}
-              onChange={(e) => setSign(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-ink-900/60 px-3 py-2 text-slate-100 focus-visible:ring"
-            >
-              {vocab.map((v) => (
-                <option key={v.label} value={v.label}>
-                  {v.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <GlassButton variant="brand" onClick={startSession}>
-            {sessionId ? "Restart session" : "Start session"}
-          </GlassButton>
-          <span className="text-sm text-slate-300" aria-live="polite">
-            Reps for &ldquo;{sign}&rdquo;: <strong>{recordedCount}</strong> /{" "}
-            {TARGET_REPS}
-          </span>
-        </div>
-
-        {/* Rep progress bar. */}
-        <div className="mb-4">
-          <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-brand-500 transition-all duration-500 ease-out"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </div>
-
-        <VideoPreview videoRef={videoRef} mirrored recording={state === "recording"} />
-
-        <div className="mt-4">
-          <GlassButton
-            variant={state === "recording" ? "danger" : "brand"}
-            disabled={!sessionId}
-            onMouseDown={startRecording}
-            onMouseUp={stopAndUpload}
-            onMouseLeave={() => state === "recording" && stopAndUpload()}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              startRecording();
-            }}
-            onTouchEnd={(e) => {
-              e.preventDefault();
-              stopAndUpload();
-            }}
-            className={`w-full !rounded-2xl px-4 py-4 text-lg ${
-              state === "recording" ? "animate-pulse-ring" : ""
-            }`}
-          >
-            {state === "recording" ? (
-              "Recording rep… release to save"
-            ) : (
-              <>
-                Hold{" "}
-                <kbd className="rounded-md border border-white/20 bg-white/10 px-2 py-0.5 text-sm">
-                  Space
-                </kbd>{" "}
-                (or this button) to record a rep
-              </>
-            )}
-          </GlassButton>
-        </div>
-
-        <div className="mt-4 min-h-[3rem] rounded-xl border border-white/10 bg-ink-900/50 p-3 text-center">
-          {state === "analysing" ? (
-            <p className="font-semibold shimmer-text" aria-live="polite">
-              Saving clip…
-            </p>
-          ) : (
-            <p className="text-slate-300" aria-live="polite">
-              {message ||
-                (recordedCount >= TARGET_REPS
-                  ? `Done — ${recordedCount} reps recorded for "${sign}".`
-                  : "Record each rep by holding Space.")}
-            </p>
-          )}
-        </div>
       </div>
     </section>
   );

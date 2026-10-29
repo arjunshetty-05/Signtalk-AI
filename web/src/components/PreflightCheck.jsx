@@ -71,7 +71,7 @@ export default function PreflightCheck({ videoRef, ready, onReadyChange }) {
 
   return (
     <div
-      className="mt-3 grid grid-cols-3 gap-2 text-sm"
+      className="mt-4 grid grid-cols-3 gap-2 text-xs sm:text-sm"
       role="group"
       aria-label="Pre-flight checks"
     >
@@ -94,22 +94,15 @@ export default function PreflightCheck({ videoRef, ready, onReadyChange }) {
 
 /** A single green/amber pre-flight indicator. `soft` = advisory, not blocking. */
 function Light({ ok, label, soft = false }) {
-  const shell = ok
-    ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-100"
+  const color = ok
+    ? "border border-[#d3e4d6] bg-[#edf5ee] text-[#356449]"
     : soft
-      ? "border-white/10 bg-white/5 text-slate-300"
-      : "border-amber-400/40 bg-amber-400/15 text-amber-100";
-  const dot = ok
-    ? "bg-emerald-400 shadow-[0_0_10px_2px_rgba(52,211,153,0.7)]"
-    : soft
-      ? "bg-slate-500"
-      : "bg-amber-400 shadow-[0_0_10px_2px_rgba(251,191,36,0.6)]";
+      ? "border border-[#e1e3dc] bg-[#f5f5f1] text-[#747c73]"
+      : "border border-[#ead9b9] bg-[#fff8e9] text-[#916b2c]";
   return (
-    <div
-      className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 font-medium backdrop-blur-md transition-colors duration-300 ${shell}`}
-    >
-      <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${dot}`} />
-      <span>{label}</span>
+    <div className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 py-2 ${color}`}>
+      <span className={`h-2 w-2 shrink-0 rounded-full ${ok ? "bg-[#639273]" : soft ? "bg-[#aeb4aa]" : "bg-[#c08a31]"}`} aria-hidden="true" />
+      <span className="truncate">{label}</span>
     </div>
   );
 }
